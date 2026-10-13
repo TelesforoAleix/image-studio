@@ -1,0 +1,19 @@
+[Unit]
+Description=Image studio
+ConditionPathIsMountPoint=/srv/homelab
+Requires=docker.service
+After=docker.service homelab-data.target homelab.service
+Wants=homelab.service
+PartOf=homelab-data.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/homelab/image-studio
+ExecStartPre=-/usr/bin/git -C /srv/homelab/image-studio pull --ff-only origin main
+ExecStart=/usr/bin/docker compose -f /srv/homelab/image-studio/compose.yaml up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose -f /srv/homelab/image-studio/compose.yaml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=homelab-data.target

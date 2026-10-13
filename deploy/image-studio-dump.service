@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily image studio database dump
+ConditionPathIsMountPoint=/srv/homelab
+After=image-studio.service
+PartOf=homelab-data.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/homelab/image-studio
+ExecCondition=/usr/bin/systemctl is-active --quiet image-studio.service
+ExecStart=/usr/bin/python3 /srv/homelab/image-studio/deploy/dump.py
+UMask=0027
