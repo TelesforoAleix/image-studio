@@ -63,7 +63,11 @@ def images_for(connection, identifier):
 
 def asset_detail(connection, identifier, *, deleted=False):
     body = serial(get_row(connection, assets, identifier, deleted=deleted))
-    body["images"] = images_for(connection, identifier)
+    body["images"] = [
+        image
+        for image in images_for(connection, identifier)
+        if not image["rejected"] or request.args.get("include_rejected") == "true"
+    ]
     return body
 
 
@@ -230,6 +234,7 @@ def duplicate_asset(connection, identifier):
                 file_hash=image["file_hash"],
                 approved=image["approved"],
                 source=image["source"],
+                rejected=image["rejected"],
             )
         )
     return jsonify(asset_detail(connection, new_id)), 201
@@ -264,14 +269,19 @@ def approve_image(connection, identifier, image_id):
     body = request.get_json()
     if (
         not isinstance(body, dict)
-        or set(body) != {"approved"}
-        or type(body["approved"]) is not bool
+        or set(body) not in ({"approved"}, {"rejected"})
+        or any(type(value) is not bool for value in body.values())
     ):
-        raise BadRequest("Supply approved as a JSON boolean")
+        raise BadRequest("Supply approved or rejected as a JSON boolean")
+    values = dict(body)
+    if body.get("approved"):
+        values["rejected"] = False
+    if body.get("rejected"):
+        values["approved"] = False
     result = connection.execute(
         update(asset_images)
         .where(asset_images.c.asset_id == identifier, asset_images.c.id == image_id)
-        .values(approved=body["approved"])
+        .values(**values)
         .returning(asset_images.c.id)
     ).first()
     if result is None:

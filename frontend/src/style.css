@@ -313,3 +313,28 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.6;
+}
+summary {
+  cursor: pointer;
+}
+figure {
+  margin: 16px 0;
+}
+.reference-toggles {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.reference-toggles img {
+  width: 140px;
+  height: 140px;
+  object-fit: contain;
+}
+input[type="checkbox"] {
+  width: auto;
+}

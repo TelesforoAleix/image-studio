@@ -30,4 +30,4 @@ COPY migrations ./migrations
 RUN mkdir /app/files && chown 10001:10001 /app/files
 USER 10001:10001
 EXPOSE 8200
-CMD ["sh", "-c", "alembic upgrade head && exec gunicorn --bind 0.0.0.0:8200 --workers 2 --access-logfile - 'image_studio:create_app()'"]
+CMD ["sh", "-c", "alembic upgrade head && python -m image_studio.startup && exec gunicorn --bind 0.0.0.0:8200 --workers 2 --access-logfile - 'image_studio:create_app()'"]

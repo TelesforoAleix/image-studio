@@ -22,6 +22,12 @@ overwrites or deletes them. A replacement is a new file; records point at the
 exact files they used. Rows are never hard-deleted; asset deletion sets a timestamp
 and image approval changes a flag while preserving attachments and stored files.
 
+Generations snapshot their exact prompt, model metadata and ordered reference inputs,
+and are never hard-deleted. Placeholder generation records are explicitly flagged.
+Dependencies may use permissive licences or weak copyleft (LGPL, MPL-2.0) when used
+unmodified as separate libraries. Strong copyleft (GPL, AGPL), including bundled
+binaries, requires escalation.
+
 No account names, home-directory paths, private addresses or hostnames of the
 owner's machines belong in this repository.
 
