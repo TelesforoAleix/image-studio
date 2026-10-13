@@ -52,13 +52,12 @@ def multipart(files):
     boundary = "synthetic-" + uuid.uuid4().hex
     parts = []
     for name, content in files:
-        parts.append(
-            f'--{boundary}\r\nContent-Disposition: form-data; name="files"; '(
-                f'filename="{name}"\r\nContent-Type: application/octet-stream\r\n\r\n'
-            ).encode()
-            + content
-            + b"\r\n"
+        header = (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="files"; '
+            f'filename="{name}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
         )
+        parts.append(header.encode() + content + b"\r\n")
     parts.append(f"--{boundary}--\r\n".encode())
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
