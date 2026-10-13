@@ -49,6 +49,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: 'false'
+          # The uploader assumes a host workspace; scans still gate this job.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
       # The action scopes its scan to the event; also scan all history.
       - run: gitleaks git --redact --log-opts=--all
 
