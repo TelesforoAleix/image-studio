@@ -54,7 +54,9 @@ def create_queue(url, *, asynchronous=False):
 
 def ensure_job_schema(url):
     # Serialize start-up without printing credentials. Library owns all schema SQL.
-    with psycopg.connect(url.replace("postgresql+psycopg://", "postgresql://", 1)) as connection:
+    with psycopg.connect(
+        url.replace("postgresql+psycopg://", "postgresql://", 1)
+    ) as connection:
         connection.execute("SELECT pg_advisory_xact_lock(8200002)")
         exists = connection.execute(
             "SELECT to_regclass('procrastinate_jobs')"
