@@ -202,7 +202,10 @@ assets with a role, toggle their approved reference images, and write scene and
 frame instructions. The fixed prompt preview combines project instructions, scene,
 asset roles/names/descriptions with references numbered in request order, then frame
 instructions. Edit replaces the prompt for that generation; Reset restores assembly.
-Choose one image model and one to four outputs. Every result remains in history.
+Choose one to three image models, each with one to four outputs. One press of
+Generate creates a run with the same prompt and ordered references for every model.
+Results appear in model columns with paid and placeholder badges; failures keep
+their error beside successful outputs. Every result remains in history.
 On an asset page, Generate reference views uses its uploaded photos; generated
 candidates can be approved or rejected individually. Rejected candidates are hidden
 by default, with a toggle to show them; their attachments and files remain stored.
@@ -267,3 +270,37 @@ clears approval. Asset detail accepts `include_rejected=true`. Hash navigation a
 polling. CI's `scripts/check_generation.py` prints proof of the complete placeholder
 journey, immutable history after canonical replacement, candidate approval/rejection,
 terminal failure, service-outage retry/recovery, limit refusal and restart persistence.
+
+
+## Compare and iterate
+
+Frame 1 lists runs newest first and polls their states without reloading. Open any
+output at full size and mark it Final; another choice replaces the selection, and
+Clear final removes the choice while retaining every output. Each run opens its
+prompt, edit flag, model metadata and ordered references with asset names and roles.
+Retry on a failed generation creates a new linked row in the same run using exactly
+the failed snapshot. The failed record and any successful results stay unchanged.
+
+Reuse settings loads a browser-only pinned draft: the sent prompt as an edit, the
+original models/counts and exact reference files in order. Old files resolve after
+asset edits, deletion or approval changes. References outside the current pack are
+labelled; remove any reference or append current pack images, edit the prompt and
+change models/counts before generating. Back to the current pack restores normal
+assembly. Drafts are not saved until Generate creates a new run. File metadata and
+asset descriptions are rebuilt on the server; draft hashes must belong to images
+of assets visible to the project, including deleted assets. Unknown, unattached or
+other-project files are refused. Each chosen model's limit is shown before Generate
+and checked before any row/job is queued; one insufficient limit refuses the run.
+
+| Routes | Methods / behaviour |
+| --- | --- |
+| `/api/variants/<id>/runs` | GET grouped history; POST `models: [{model, count}]`, optional `prompt`; pinned drafts also supply ordered `references: [{hash, asset_id, role}]` and `prompt` |
+| `/api/generations/<id>/retry` | POST only for failed rows; retains snapshot and run, sets `retry_of` |
+| `/api/variants/<id>/final` | GET choice or null; PUT `{generation_id, output}` (zero-based output index); DELETE clears |
+
+Single-model generation routes and asset reference views remain compatible. Alembic
+0003 assigns each existing generation its own run and adds retry and final-choice
+links without changing snapshots. CI's `scripts/check_compare.py` prints Journey D
+proof, including refusal without queueing, pinned old files, retained retry history,
+final replacement and restart persistence. The subsequent dump restore compares all
+tables and row counts, including these records.
