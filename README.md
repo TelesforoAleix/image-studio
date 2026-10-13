@@ -222,7 +222,9 @@ has one job; its one to four outputs are obtained by sequential `n=1` calls, pre
 completed outputs before any retry. Jobs transition waiting → running → done, or failed.
 Connection errors, timeouts and service 5xx retry indefinitely with delays of
 10, 20, 40, 80, 160, then 300 seconds. A 4xx or the placeholder's deliberate failure is
-terminal. Calls allow 30 minutes per image. Worker shutdown allows a call to finish.
+terminal. Calls allow 30 minutes per image. Worker shutdown allows a call to finish. Compose uses an init process to forward
+stop signals during startup as well as normal operation; disposable CI teardown
+uses a short timeout.
 Procrastinate heartbeat checks recover interrupted jobs; a lost HTTP response can
 cause that unfinished output to be requested again, since the contract has no idempotency
 key. Already stored outputs are retained.

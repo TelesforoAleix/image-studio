@@ -129,9 +129,9 @@ jobs:
           docker compose stop worker
           uv run python scripts/check_dump.py
           docker compose start worker
-      - name: Print app logs on failure
-        if: failure()
+      - name: Print service logs
+        if: always()
         run: docker compose logs app worker placeholder
       - name: Tear down throwaway stack
         if: always()
-        run: docker compose down -v
+        run: docker compose down -v --timeout 15

@@ -23,6 +23,8 @@ services:
       start_period: 10s
   worker:
     build: .
+    # Forward stop signals even before Procrastinate installs its handlers.
+    init: true
     command: ["python", "-m", "image_studio.jobs"]
     environment:
       DATABASE_URL: "postgresql://studio:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/studio"
