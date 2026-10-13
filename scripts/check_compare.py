@@ -144,6 +144,12 @@ def main():
         flush=True,
     )
     approved_upload(assets[0]["id"], ["purple", "orange"])
+    # The S4 helper approves all attachments; retain the canonical replacement.
+    request(
+        f"/api/assets/{assets[0]['id']}/images/{old['id']}",
+        "PATCH",
+        {"approved": False},
+    )
     excessive = request(f"/api/variants/{variant}/preview")
     assert len(excessive["references"]) == 5
     before = request(path)
