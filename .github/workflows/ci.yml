@@ -123,6 +123,8 @@ jobs:
         run: uv run python scripts/check_stack.py
       - name: Prove first generation, snapshots, retries and persistence
         run: uv run python scripts/check_generation.py
+      - name: Prove compare and iterate with partial failure and pinned reuse
+        run: uv run python scripts/check_compare.py
       - name: Prove database dump restores with matching tables and row counts
         run: |
           # Freeze periodic job writes while comparing the dump's exact row counts.

@@ -1,9 +1,10 @@
 """Composition editing, fixed prompt previews and immutable generation queuing."""
 
 from datetime import datetime
+from uuid import uuid4
 
 from flask import Blueprint, current_app, jsonify, request
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
 
@@ -11,12 +12,14 @@ from image_studio.api import get_row, images_for, serial, transaction
 from image_studio.jobs import defer
 from image_studio.prompting import assemble, reference_view
 from image_studio.schema import (
+    asset_images,
     assets,
     composition_assets,
     compositions,
     generations,
     image_models,
     projects,
+    stored_files,
     variants,
 )
 
@@ -294,7 +297,7 @@ def queue(connection, preview, kind, **owner):
     count = len(preview["references"])
     if count > info["max_references"]:
         raise BadRequest(
-            f"Selected {count} references; this model accepts at most "
+            f"Selected {count} references; {model['model_name']} accepts at most "
             f"{info['max_references']}. Adjust your selection."
         )
     prompt = value.get("prompt", preview["prompt"])
@@ -373,3 +376,232 @@ def history(connection, condition):
 @transaction
 def generation(connection, identifier):
     return jsonify(serial(get_row(connection, generations, identifier)))
+
+
+def run_choices(value):
+    choices = value.get("models")
+    if not isinstance(choices, list) or not 1 <= len(choices) <= 3:
+        raise BadRequest("Choose one to three models")
+    names = set()
+    for choice in choices:
+        if (
+            not isinstance(choice, dict)
+            or set(choice) != {"model", "count"}
+            or not isinstance(choice["model"], str)
+            or type(choice["count"]) is not int
+            or not 1 <= choice["count"] <= 4
+        ):
+            raise BadRequest("Each model needs a name and a count between 1 and 4")
+        if choice["model"] in names:
+            raise BadRequest("Choose each model only once")
+        names.add(choice["model"])
+    return choices
+
+
+def draft_references(connection, project_id, supplied):
+    if not isinstance(supplied, list):
+        raise BadRequest("references must be an ordered list")
+    result = []
+    for ref in supplied:
+        if (
+            not isinstance(ref, dict)
+            or not isinstance(ref.get("hash"), str)
+            or type(ref.get("asset_id")) is not int
+            or not 1 <= ref["asset_id"] <= 2147483647
+            or not isinstance(ref.get("role"), str)
+        ):
+            raise BadRequest("Each reference needs a stored hash, asset_id and role")
+        row = (
+            connection.execute(
+                select(assets, stored_files)
+                .join(asset_images, asset_images.c.asset_id == assets.c.id)
+                .join(stored_files, stored_files.c.hash == asset_images.c.file_hash)
+                .where(
+                    assets.c.id == ref["asset_id"],
+                    stored_files.c.hash == ref["hash"],
+                    or_(
+                        assets.c.project_id.is_(None), assets.c.project_id == project_id
+                    ),
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise BadRequest(
+                "Reference hash must belong to an asset visible to this project"
+            )
+        # Never use client-supplied file metadata or asset descriptions.
+        result.append(
+            {
+                "hash": row["hash"],
+                "media_type": row["media_type"],
+                "asset_id": row["id"],
+                "asset_name": row["name"],
+                "description": row["description"],
+                "type_tag": row["type_tag"],
+                "role": ref["role"],
+            }
+        )
+    return result
+
+
+def run_detail(connection, variant_id, run_id):
+    rows = [
+        serial(r)
+        for r in connection.execute(
+            select(generations)
+            .where(
+                generations.c.variant_id == variant_id, generations.c.run_id == run_id
+            )
+            .order_by(generations.c.id)
+        ).mappings()
+    ]
+    if not rows:
+        raise NotFound("Run not found")
+    first = rows[0]
+    return {
+        "run_id": run_id,
+        "created_at": first["created_at"],
+        "prompt": first["prompt"],
+        "edited": first["edited"],
+        "references": first["references"],
+        "generations": rows,
+    }
+
+
+@generation_api.route("/variants/<int:identifier>/runs", methods=["GET", "POST"])
+@transaction
+def variant_runs(connection, identifier):
+    variant = get_row(connection, variants, identifier)
+    comp = composition(connection, variant["composition_id"])
+    if request.method == "GET":
+        run_ids = connection.execute(
+            select(generations.c.run_id, func.min(generations.c.id).label("first_id"))
+            .where(generations.c.variant_id == identifier)
+            .group_by(generations.c.run_id)
+            .order_by(func.min(generations.c.id).desc())
+        ).all()
+        return jsonify([run_detail(connection, identifier, r.run_id) for r in run_ids])
+    value = body(["models", "prompt", "references"], ["models"])
+    choices = run_choices(value)
+    # Pinned drafts must work even if the current pack cannot be assembled.
+    if "references" in value:
+        refs = draft_references(connection, comp["project_id"], value["references"])
+        prompt = value.get("prompt")
+        assembled = prompt
+        edited = True
+    else:
+        preview = variant_preview(connection, identifier)
+        refs = preview["references"]
+        assembled = preview["prompt"]
+        prompt = value.get("prompt", assembled)
+        edited = prompt != assembled
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise BadRequest("prompt must be nonempty text")
+    available = {m["model_name"]: m["model_info"] for m in model_list(connection)}
+    for choice in choices:
+        info = available.get(choice["model"])
+        if info is None:
+            raise BadRequest("Choose an available image model")
+        if len(refs) > info["max_references"]:
+            raise BadRequest(
+                f"{choice['model']}: selected {len(refs)} references; "
+                f"accepts at most {info['max_references']}. Adjust your selection."
+            )
+    run_id = str(uuid4())
+    for choice in choices:
+        info = available[choice["model"]]
+        row_id = connection.execute(
+            insert(generations)
+            .values(
+                run_id=run_id,
+                kind="composition",
+                variant_id=identifier,
+                model=choice["model"],
+                model_info=info,
+                count=choice["count"],
+                prompt=prompt,
+                assembled_prompt=assembled,
+                edited=edited,
+                references=refs,
+                placeholder=info["placeholder"],
+            )
+            .returning(generations.c.id)
+        ).scalar_one()
+        defer(connection, row_id)
+    return jsonify(run_detail(connection, identifier, run_id)), 201
+
+
+@generation_api.post("/generations/<int:identifier>/retry")
+@transaction
+def retry_generation(connection, identifier):
+    original = get_row(connection, generations, identifier)
+    if original["state"] != "failed":
+        raise Conflict("Only failed generations can be retried")
+    if original["variant_id"] is not None:
+        variant = get_row(connection, variants, original["variant_id"])
+        composition(connection, variant["composition_id"])
+    keys = (
+        "kind",
+        "variant_id",
+        "asset_id",
+        "run_id",
+        "model",
+        "model_info",
+        "prompt",
+        "assembled_prompt",
+        "edited",
+        "references",
+        "placeholder",
+        "count",
+    )
+    row_id = connection.execute(
+        insert(generations)
+        .values(**{k: original[k] for k in keys}, retry_of=identifier)
+        .returning(generations.c.id)
+    ).scalar_one()
+    defer(connection, row_id)
+    return jsonify(serial(get_row(connection, generations, row_id))), 201
+
+
+@generation_api.route(
+    "/variants/<int:identifier>/final", methods=["GET", "PUT", "DELETE"]
+)
+@transaction
+def final_image(connection, identifier):
+    variant = get_row(connection, variants, identifier)
+    composition(connection, variant["composition_id"])
+    if request.method == "DELETE":
+        connection.execute(
+            update(variants)
+            .where(variants.c.id == identifier)
+            .values(final_generation_id=None, final_output=None)
+        )
+    elif request.method == "PUT":
+        value = body(["generation_id", "output"], ["generation_id", "output"])
+        if type(value["generation_id"]) is not int or type(value["output"]) is not int:
+            raise BadRequest("generation_id and output must be integers")
+        row = get_row(connection, generations, value["generation_id"])
+        if (
+            row["variant_id"] != identifier
+            or row["state"] != "done"
+            or not 0 <= value["output"] < len(row["outputs"])
+        ):
+            raise BadRequest(
+                "Choose an output of a done generation belonging to this variant"
+            )
+        connection.execute(
+            update(variants)
+            .where(variants.c.id == identifier)
+            .values(final_generation_id=row["id"], final_output=value["output"])
+        )
+    variant = get_row(connection, variants, identifier)
+    if variant["final_generation_id"] is None:
+        return jsonify(None)
+    row = get_row(connection, generations, variant["final_generation_id"])
+    return jsonify(
+        generation_id=row["id"],
+        output=variant["final_output"],
+        hash=row["outputs"][variant["final_output"]],
+    )

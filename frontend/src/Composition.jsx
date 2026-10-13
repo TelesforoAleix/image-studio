@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { ProjectForm } from "./ProjectForm";
-import { History, ModelPicker } from "./Generation";
+import { Runs, RunPicker, PinnedReferences } from "./Runs";
 
 export function ProjectPage({ id, act, changed, busy }) {
   const [project, setProject] = useState(null);
@@ -115,8 +115,8 @@ export function CompositionPage({ id, act, busy }) {
   const [editing, setEditing] = useState(false);
   const [edited, setEdited] = useState("");
   const [models, setModels] = useState([]);
-  const [model, setModel] = useState("");
-  const [count, setCount] = useState(1);
+  const [choices, setChoices] = useState([]);
+  const [draft, setDraft] = useState(null);
   const [revision, setRevision] = useState(0);
   const variant = comp?.variants[0];
   useEffect(() => {
@@ -163,6 +163,13 @@ export function CompositionPage({ id, act, busy }) {
     await api(`/compositions/${id}`, "PATCH", { scene });
     await api(`/variants/${variant.id}`, "PATCH", { instructions });
   }
+  const references = draft ?? preview?.references ?? [];
+  const invalidModels =
+    !choices.length ||
+    choices.some((c) => {
+      const info = models.find((m) => m.model_name === c.model)?.model_info;
+      return !info || references.length > info.max_references;
+    });
   const available = assets.filter(
     (a) => !comp.assets.some((s) => s.asset_id === a.id),
   );
@@ -254,8 +261,27 @@ export function CompositionPage({ id, act, busy }) {
           }
         />
       ))}
+      {draft !== null && (
+        <>
+          <PinnedReferences
+            draft={draft}
+            setDraft={setDraft}
+            current={preview?.references ?? []}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(null);
+              setEditing(false);
+              setEdited("");
+            }}
+          >
+            Back to the current pack
+          </button>
+        </>
+      )}
       <div className="panel">
-        <h3>Prompt to send</h3>
+        <h3 id="prompt-editor">Prompt to send</h3>
         {editing ? (
           <label>
             Edited prompt
@@ -281,9 +307,12 @@ export function CompositionPage({ id, act, busy }) {
           </button>
           <button
             type="button"
+            disabled={draft !== null}
             onClick={() => {
-              setEditing(false);
-              setEdited("");
+              if (draft === null) {
+                setEditing(false);
+                setEdited("");
+              }
             }}
           >
             Reset
@@ -294,27 +323,28 @@ export function CompositionPage({ id, act, busy }) {
             e.preventDefault();
             act(async () => {
               await saveText();
-              await api(`/variants/${variant.id}/generations`, "POST", {
-                model,
-                count,
+              await api(`/variants/${variant.id}/runs`, "POST", {
+                models: choices,
+                ...(draft !== null ? { references: draft } : {}),
                 prompt: editing ? edited : preview.prompt,
               });
               setRevision((n) => n + 1);
             });
           }}
         >
-          <ModelPicker
-            {...{ models, model, setModel, count, setCount }}
-            references={preview?.references.length || 0}
+          <RunPicker
+            models={models}
+            choices={choices}
+            setChoices={setChoices}
+            references={references.length}
+            busy={busy}
           />
           <button
             disabled={
               busy ||
-              !model ||
-              !preview ||
-              preview.references.length >
-                (models.find((m) => m.model_name === model)?.model_info
-                  .max_references ?? 0)
+              invalidModels ||
+              (draft === null && !preview) ||
+              (editing && !edited.trim())
             }
           >
             Generate
@@ -322,9 +352,22 @@ export function CompositionPage({ id, act, busy }) {
         </form>
       </div>
       <h3>Frame 1 results</h3>
-      <History
-        path={`/variants/${variant.id}/generations`}
-        {...{ act, revision }}
+      <Runs
+        variantId={variant.id}
+        {...{ act, busy, revision }}
+        reuse={(run) => {
+          setDraft(run.references.map((r) => ({ ...r })));
+          setChoices(
+            run.generations
+              .filter((g) => !g.retry_of)
+              .map((g) => ({ model: g.model, count: g.count })),
+          );
+          setEdited(run.prompt);
+          setEditing(true);
+          document
+            .getElementById("prompt-editor")
+            ?.scrollIntoView({ behavior: "smooth" });
+        }}
       />
     </section>
   );

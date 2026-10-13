@@ -1,5 +1,7 @@
 """SQLAlchemy definitions; only Alembic creates or changes these tables."""
 
+from uuid import uuid4
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -105,12 +107,27 @@ variants = Table(
     Column("composition_id", ForeignKey("compositions.id"), nullable=False, index=True),
     Column("name", Text, nullable=False, server_default="Frame 1"),
     Column("instructions", Text, nullable=False, server_default=""),
+    Column(
+        "final_generation_id",
+        ForeignKey("generations.id", use_alter=True, name="variant_final_generation"),
+    ),
+    Column("final_output", Integer),
+    CheckConstraint(
+        "(final_generation_id IS NULL AND final_output IS NULL) OR "
+        "(final_generation_id IS NOT NULL AND final_output IS NOT NULL "
+        "AND final_output >= 0)",
+        name="variant_final_pair",
+    ),
     Column("position", Integer, nullable=False, server_default="0"),
 )
 generations = Table(
     "generations",
     metadata,
     Column("id", Integer, Identity(), primary_key=True),
+    Column(
+        "run_id", String(36), nullable=False, index=True, default=lambda: str(uuid4())
+    ),
+    Column("retry_of", ForeignKey("generations.id")),
     Column("kind", Text, nullable=False),
     Column("variant_id", ForeignKey("variants.id"), index=True),
     Column("asset_id", ForeignKey("assets.id"), index=True),
