@@ -19,11 +19,15 @@ FROM python:3.13-slim AS runtime
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    FRONTEND_DIST=/app/static
+    FRONTEND_DIST=/app/static \
+    STUDIO_FILES=/app/files
 WORKDIR /app
 RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --no-create-home app
 COPY --from=python-build /app/.venv /app/.venv
 COPY --from=frontend /frontend/dist /app/static
+COPY alembic.ini ./
+COPY migrations ./migrations
+RUN mkdir /app/files && chown 10001:10001 /app/files
 USER 10001:10001
 EXPOSE 8200
-CMD ["gunicorn", "--bind", "0.0.0.0:8200", "--workers", "2", "--access-logfile", "-", "image_studio:create_app()"]
+CMD ["sh", "-c", "alembic upgrade head && exec gunicorn --bind 0.0.0.0:8200 --workers 2 --access-logfile - 'image_studio:create_app()'"]

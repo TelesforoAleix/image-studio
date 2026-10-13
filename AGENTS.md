@@ -11,13 +11,16 @@ run time. CI enforces this with the no-data-files guard and secret scanning.
 No secrets in git or container images. Publish the app only on loopback; publish
 no database port. Models are accessed only through the configured endpoint, with
 its base URL and key supplied by the environment. The studio holds no model key
-and hard-codes no model or provider; display names supplied by that endpoint.
+and hard-codes no model or provider, and displays the model names that endpoint supplies.
 
 Libraries own machinery: use mature libraries for an ORM, migrations, image
 decoding and job execution when a task introduces those needs. Do not hand-roll them.
 
-A stored image file is never overwritten or deleted by the app. A replacement is
-a new file; records point at the exact files they used.
+Every schema change is an Alembic migration; tables are created only by migrations.
+Stored image files are content-addressed by SHA-256 and immutable: the app never
+overwrites or deletes them. A replacement is a new file; records point at the
+exact files they used. Rows are never hard-deleted; asset deletion sets a timestamp
+and image approval changes a flag while preserving attachments and stored files.
 
 No account names, home-directory paths, private addresses or hostnames of the
 owner's machines belong in this repository.

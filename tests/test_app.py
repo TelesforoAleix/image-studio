@@ -73,3 +73,22 @@ def test_built_page_and_files(app, tmp_path):
 def test_frontend_setting_from_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("FRONTEND_DIST", str(tmp_path))
     assert create_app().config["FRONTEND_DIST"] == tmp_path
+
+
+def test_unconfigured_data_api(app):
+    response = app.test_client().get("/api/projects")
+    assert response.status_code == 503
+    assert response.json == {"error": "Database is not configured"}
+
+
+def test_request_limit_is_json_before_database_access(app):
+    from image_studio.files import REQUEST_LIMIT
+
+    response = app.test_client().post(
+        "/api/assets",
+        data=b"x",
+        environ_overrides={"CONTENT_LENGTH": str(REQUEST_LIMIT + 1)},
+        content_type="application/json",
+    )
+    assert response.status_code == 413
+    assert response.json == {"error": "Maximum request size is 90 MB"}

@@ -14,3 +14,8 @@
 !frontend/src/
 !frontend/src/*.jsx
 !frontend/src/*.css
+!alembic.ini
+!migrations/
+!migrations/*.py
+!migrations/versions/
+!migrations/versions/*.py
