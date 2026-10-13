@@ -1,7 +1,7 @@
 # image studio
 
 A personal web application for making visually consistent AI-generated images.
-Reusable assets combine into compositions inside projects, with a Frame 1 variant and retained generation history; a separate endpoint
+Reusable assets combine into compositions inside projects, with ordered frames and retained generation history; a separate endpoint
 creates the images over HTTP. This repository holds code only; user work lives
 outside it.
 
@@ -197,7 +197,7 @@ unlock chain untouched.
 
 ## First generation
 
-Projects now have compositions, each with one variant named **Frame 1**. Add visible
+Projects have compositions, each starting with a variant named **Frame 1**. Add visible
 assets with a role, toggle their approved reference images, and write scene and
 frame instructions. The fixed prompt preview combines project instructions, scene,
 asset roles/names/descriptions with references numbered in request order, then frame
@@ -257,7 +257,7 @@ Additional API routes:
 | `/api/projects/<id>/compositions` | GET list, POST create (`name`, `scene`) with Frame 1 |
 | `/api/compositions/<id>` | GET detail, PATCH name/scene, DELETE soft-delete |
 | `/api/compositions/<id>/assets/<asset-id>` | PUT role and `deselected_images` IDs; DELETE deactivates selection |
-| `/api/variants/<id>` | PATCH `instructions` |
+| `/api/variants/<id>` | GET by ID (including hidden frames); PATCH name, instructions or frame deselections; DELETE soft-delete |
 | `/api/variants/<id>/preview` | GET saved preview; POST preview draft `scene` and `instructions` without saving |
 | `/api/variants/<id>/generations` | GET history, POST queue (`model`, `count`, optional replacement `prompt`) |
 | `/api/assets/<id>/reference-preview` | GET fixed reference-view prompt and uploaded references |
@@ -274,7 +274,7 @@ terminal failure, service-outage retry/recovery, limit refusal and restart persi
 
 ## Compare and iterate
 
-Frame 1 lists runs newest first and polls their states without reloading. Open any
+Each frame lists runs newest first and polls their states without reloading. Open any
 output at full size and mark it Final; another choice replaces the selection, and
 Clear final removes the choice while retaining every output. Each run opens its
 prompt, edit flag, model metadata and ordered references with asset names and roles.
@@ -304,3 +304,44 @@ links without changing snapshots. CI's `scripts/check_compare.py` prints Journey
 proof, including refusal without queueing, pinned old files, retained retry history,
 final replacement and restart persistence. The subsequent dump restore compares all
 tables and row counts, including these records.
+
+
+## Storyboards
+
+A composition opens on its storyboard: live frames in order, with instructions,
+final images (or “No final yet”), and links to work on each frame. Add frame creates
+Frame N; rename it on its frame page. Move up / Move down changes the sequence.
+Deleting a frame asks inline and hides it with its runs and final. At least one live
+frame must remain. Its generations, final selection and immutable files are retained
+and remain readable by ID.
+
+The storyboard also edits the composition's single shared asset pack, roles and scene.
+Every frame uses that pack, with its own instructions and optional image deselections.
+The frame's reference switches only remove selected pack images for that frame;
+previews and new run snapshots use the remaining references. Shared edits affect later
+previews and runs for all frames. Retained snapshots and reused pinned drafts keep
+working as described above.
+
+Export sequence names frames with no final before download and skips them. The server
+streams an image-only ZIP without writing an archive to storage. Final images use
+unchanged stored bytes, in live frame order, named `01-frame-name.png`, `02-…`, with
+contiguous numbering and their stored format's extension. Frame/composition filename
+slugs use lowercase ASCII letters and digits separated by hyphens, at most 80 characters,
+with `untitled` as fallback. The ZIP is named after the composition. Placeholder finals
+export unchanged; their generation records keep the placeholder flag.
+
+| Routes | Methods / behaviour |
+| --- | --- |
+| `/api/compositions/<id>` | GET includes live ordered variants with final choices and the one shared pack |
+| `/api/compositions/<id>/variants` | POST optional `name`, `instructions`; defaults to Frame N |
+| `/api/compositions/<id>/frame-order` | PUT `{ids: [...]}` with exactly every live frame ID once |
+| `/api/variants/<id>` | PATCH `name`, `instructions`, `deselected_images` (unique selected pack image IDs) |
+| `/api/compositions/<id>/sequence` | GET export filename, ordered entries and skipped frame IDs/names |
+| `/api/compositions/<id>/sequence.zip` | GET streamed ZIP, including an empty ZIP if there are no finals |
+
+Hidden frames refuse editing, queueing, retrying and final changes. Alembic 0004 adds
+nullable `variants.deleted_at` and default-empty `variants.deselected_images` without
+changing existing runs, snapshots or finals. Frame add/delete/reorder serialize on the
+composition row. CI's `scripts/check_storyboard.py` prints Journey C proofs for shared
+references, per-frame snapshots, byte-exact exports, reorder refusals, soft deletion and
+restart persistence; the subsequent dump restore includes all these rows.

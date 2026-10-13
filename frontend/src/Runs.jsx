@@ -211,7 +211,7 @@ export function Runs({ variantId, act, busy, revision, reuse }) {
         <div className="panel final-image">
           <h3>Final image</h3>
           <a href={`/api/files/${final.hash}`} target="_blank" rel="noreferrer">
-            <img src={`/api/files/${final.hash}`} alt="Frame 1 final image" />
+            <img src={`/api/files/${final.hash}`} alt="Selected final image" />
           </a>
           <button
             disabled={busy}

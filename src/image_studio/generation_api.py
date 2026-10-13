@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
@@ -22,6 +22,7 @@ from image_studio.schema import (
     stored_files,
     variants,
 )
+from image_studio.sequence import EXTENSIONS, slug, stream_sequence
 
 generation_api = Blueprint("generation", __name__, url_prefix="/api")
 
@@ -73,8 +74,49 @@ def selected_assets(connection, comp):
     return result
 
 
+def live_variant(connection, identifier):
+    row = get_row(connection, variants, identifier)
+    if row["deleted_at"] is not None:
+        raise NotFound("Frame not found")
+    composition(connection, row["composition_id"])
+    return row
+
+
+def lock_composition(connection, identifier):
+    connection.execute(
+        select(compositions.c.id)
+        .where(compositions.c.id == identifier)
+        .with_for_update()
+    )
+    return composition(connection, identifier)
+
+
+def live_frames(connection, identifier):
+    return list(
+        connection.execute(
+            select(variants)
+            .where(
+                variants.c.composition_id == identifier,
+                variants.c.deleted_at.is_(None),
+            )
+            .order_by(variants.c.position, variants.c.id)
+        ).mappings()
+    )
+
+
+def selected_final(connection, variant):
+    if variant["final_generation_id"] is None:
+        return None
+    row = get_row(connection, generations, variant["final_generation_id"])
+    return {
+        "generation_id": row["id"],
+        "output": variant["final_output"],
+        "hash": row["outputs"][variant["final_output"]],
+    }
+
+
 def variant_preview(connection, identifier):
-    variant = get_row(connection, variants, identifier)
+    variant = live_variant(connection, identifier)
     comp = composition(connection, variant["composition_id"])
     project = get_row(connection, projects, comp["project_id"])
     return assemble(project, comp, selected_assets(connection, comp), variant)
@@ -97,12 +139,8 @@ def detail(connection, identifier):
         asset["images"] = images_for(connection, asset["id"])
         result["assets"].append({**serial(selection), "asset": asset})
     result["variants"] = [
-        serial(r)
-        for r in connection.execute(
-            select(variants)
-            .where(variants.c.composition_id == identifier)
-            .order_by(variants.c.position, variants.c.id)
-        ).mappings()
+        {**serial(r), "final": selected_final(connection, r)}
+        for r in live_frames(connection, identifier)
     ]
     return result
 
@@ -247,16 +285,148 @@ def remove_asset(connection, identifier, asset_id):
     return jsonify(detail(connection, identifier))
 
 
-@generation_api.patch("/variants/<int:identifier>")
+@generation_api.post("/compositions/<int:identifier>/variants")
+@transaction
+def add_frame(connection, identifier):
+    lock_composition(connection, identifier)
+    value = text_fields(body(["name", "instructions"]), ["name", "instructions"])
+    rows = list(
+        connection.execute(
+            select(variants).where(variants.c.composition_id == identifier)
+        ).mappings()
+    )
+    value.setdefault("name", f"Frame {len(rows) + 1}")
+    row_id = connection.execute(
+        insert(variants)
+        .values(
+            composition_id=identifier,
+            position=max((r["position"] for r in rows), default=-1) + 1,
+            **value,
+        )
+        .returning(variants.c.id)
+    ).scalar_one()
+    return jsonify(serial(get_row(connection, variants, row_id))), 201
+
+
+@generation_api.put("/compositions/<int:identifier>/frame-order")
+@transaction
+def reorder_frames(connection, identifier):
+    lock_composition(connection, identifier)
+    ids = body(["ids"], ["ids"])["ids"]
+    expected = {r["id"] for r in live_frames(connection, identifier)}
+    if (
+        not isinstance(ids, list)
+        or any(type(i) is not int for i in ids)
+        or len(ids) != len(expected)
+        or set(ids) != expected
+    ):
+        raise BadRequest("ids must contain every live frame exactly once")
+    for position, row_id in enumerate(ids):
+        connection.execute(
+            update(variants).where(variants.c.id == row_id).values(position=position)
+        )
+    return jsonify(detail(connection, identifier))
+
+
+@generation_api.route("/variants/<int:identifier>", methods=["GET", "PATCH", "DELETE"])
 @transaction
 def edit_variant(connection, identifier):
-    variant = get_row(connection, variants, identifier)
-    composition(connection, variant["composition_id"])
-    value = text_fields(body(["instructions"], ["instructions"]), ["instructions"])
-    connection.execute(
-        update(variants).where(variants.c.id == identifier).values(**value)
+    original = get_row(connection, variants, identifier)
+    if request.method == "GET":
+        return jsonify(serial(original))
+    lock_composition(connection, original["composition_id"])
+    variant = live_variant(connection, identifier)
+    if request.method == "DELETE":
+        if len(live_frames(connection, variant["composition_id"])) <= 1:
+            raise Conflict("A composition must keep at least one live frame")
+        connection.execute(
+            update(variants)
+            .where(variants.c.id == identifier)
+            .values(deleted_at=datetime.now().astimezone())
+        )
+        return jsonify(deleted=True)
+    value = text_fields(
+        body(["name", "instructions", "deselected_images"]), ["name", "instructions"]
     )
+    if "deselected_images" in value:
+        ids = value["deselected_images"]
+        available = {
+            image["id"]
+            for _, selection, images in selected_assets(
+                connection, composition(connection, variant["composition_id"])
+            )
+            for image in images
+            if image["approved"]
+            and not image["rejected"]
+            and image["id"] not in selection["deselected_images"]
+        }
+        if (
+            not isinstance(ids, list)
+            or any(type(i) is not int or i not in available for i in ids)
+            or len(ids) != len(set(ids))
+        ):
+            raise BadRequest(
+                "deselected_images must contain unique selected pack image IDs"
+            )
+    if value:
+        connection.execute(
+            update(variants).where(variants.c.id == identifier).values(**value)
+        )
     return jsonify(serial(get_row(connection, variants, identifier)))
+
+
+def sequence_detail(connection, identifier):
+    comp = composition(connection, identifier)
+    entries, skipped = [], []
+    for frame in live_frames(connection, identifier):
+        final = selected_final(connection, frame)
+        if final is None:
+            skipped.append({"id": frame["id"], "name": frame["name"]})
+            continue
+        file = (
+            connection.execute(
+                select(stored_files).where(stored_files.c.hash == final["hash"])
+            )
+            .mappings()
+            .one()
+        )
+        entries.append(
+            {
+                "frame_id": frame["id"],
+                "name": frame["name"],
+                "hash": final["hash"],
+                "filename": (
+                    f"{len(entries) + 1:02d}-{slug(frame['name'])}."
+                    f"{EXTENSIONS[file['media_type']]}"
+                ),
+            }
+        )
+    return {
+        "filename": slug(comp["name"]) + ".zip",
+        "entries": entries,
+        "skipped": skipped,
+    }
+
+
+@generation_api.get("/compositions/<int:identifier>/sequence")
+@transaction
+def sequence_manifest(connection, identifier):
+    return jsonify(sequence_detail(connection, identifier))
+
+
+@generation_api.get("/compositions/<int:identifier>/sequence.zip")
+@transaction
+def export_sequence(connection, identifier):
+    manifest = sequence_detail(connection, identifier)
+    return Response(
+        stream_sequence(current_app.config["STUDIO_FILES"], manifest["entries"]),
+        mimetype="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename={manifest['filename']}",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @generation_api.route("/variants/<int:identifier>/preview", methods=["GET", "POST"])
@@ -268,7 +438,7 @@ def preview(connection, identifier):
         body(["scene", "instructions"], ["scene", "instructions"]),
         ["scene", "instructions"],
     )
-    variant = dict(get_row(connection, variants, identifier))
+    variant = dict(live_variant(connection, identifier))
     comp = dict(composition(connection, variant["composition_id"]))
     comp["scene"] = value["scene"]
     variant["instructions"] = value["instructions"]
@@ -483,6 +653,7 @@ def variant_runs(connection, identifier):
             .order_by(func.min(generations.c.id).desc())
         ).all()
         return jsonify([run_detail(connection, identifier, r.run_id) for r in run_ids])
+    live_variant(connection, identifier)
     value = body(["models", "prompt", "references"], ["models"])
     choices = run_choices(value)
     # Pinned drafts must work even if the current pack cannot be assembled.
@@ -540,7 +711,7 @@ def retry_generation(connection, identifier):
     if original["state"] != "failed":
         raise Conflict("Only failed generations can be retried")
     if original["variant_id"] is not None:
-        variant = get_row(connection, variants, original["variant_id"])
+        variant = live_variant(connection, original["variant_id"])
         composition(connection, variant["composition_id"])
     keys = (
         "kind",
@@ -572,6 +743,8 @@ def retry_generation(connection, identifier):
 def final_image(connection, identifier):
     variant = get_row(connection, variants, identifier)
     composition(connection, variant["composition_id"])
+    if request.method != "GET":
+        live_variant(connection, identifier)
     if request.method == "DELETE":
         connection.execute(
             update(variants)

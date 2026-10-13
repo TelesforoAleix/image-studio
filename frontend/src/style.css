@@ -386,3 +386,23 @@ fieldset {
     grid-template-columns: 1fr;
   }
 }
+
+.storyboard-frame img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: #f7f8f5;
+  margin: 16px 0;
+}
+.frame-instructions {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.storyboard-frame .actions {
+  gap: 12px;
+  margin-top: 16px;
+}
+.storyboard-frame .actions a {
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
