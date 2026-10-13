@@ -19,6 +19,13 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: frontend
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
@@ -29,3 +36,54 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: 'false'
       # The action scopes its scan to the event; also scan all history.
       - run: gitleaks git --redact --log-opts=--all
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create throwaway database password
+        run: |
+          umask 077
+          python - <<'PYCODE'
+          import secrets
+          from pathlib import Path
+          Path('.env').write_text('POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n')
+          PYCODE
+      - name: Build and start stack
+        run: docker compose up -d --build --wait --wait-timeout 120
+      - name: Fetch page, health and unknown API route
+        run: |
+          python - <<'PYCODE'
+          import json
+          import urllib.error
+          import urllib.request
+
+          base = 'http://127.0.0.1:8200'
+          with urllib.request.urlopen(base + '/', timeout=10) as response:
+              assert response.status == 200
+              page = response.read().decode()
+              print(page)
+              assert '<title>image studio</title>' in page
+          with urllib.request.urlopen(base + '/api/health', timeout=10) as response:
+              assert response.status == 200
+              health = json.load(response)
+              print('Health:', json.dumps(health))
+              assert health == {'postgres': 'ok'}, health
+          try:
+              urllib.request.urlopen(base + '/api/unknown', timeout=10)
+          except urllib.error.HTTPError as response:
+              assert response.code == 404
+              assert response.headers.get_content_type() == 'application/json'
+              body = json.load(response)
+              print('Unknown API:', response.code, json.dumps(body))
+              assert body == {'error': 'Unknown API route'}, body
+          else:
+              raise AssertionError('Unknown API route did not return 404')
+          PYCODE
+      - name: Print app logs on failure
+        if: failure()
+        run: docker compose logs app
+      - name: Tear down throwaway stack
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,16 @@
+# Build context is restricted to the code and configuration needed by the image.
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!LICENSE
+!src/
+!src/image_studio/
+!src/image_studio/*.py
+!frontend/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/src/
+!frontend/src/*.jsx
+!frontend/src/*.css
