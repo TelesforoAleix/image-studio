@@ -345,3 +345,85 @@ changing existing runs, snapshots or finals. Frame add/delete/reorder serialize 
 composition row. CI's `scripts/check_storyboard.py` prints Journey C proofs for shared
 references, per-frame snapshots, byte-exact exports, reorder refusals, soft deletion and
 restart persistence; the subsequent dump restore includes all these rows.
+
+## Portable packages and storage
+
+**Export asset** on an asset page downloads every attached image, including earlier
+canonical references and rejected generated candidates. The storyboard offers
+**Export images**, the existing images-only sequence with skipped frame names,
+and **Export complete package**, which also retains hidden frames and their history.
+Exports build and stream ZIPs on request, without storing archives, changing records
+or rewriting image bytes. Import and permanent deletion are not available.
+
+| Route | Behaviour |
+| --- | --- |
+| `/api/assets/<id>/export.zip` | GET asset package, including soft-deleted assets |
+| `/api/compositions/<id>/export.zip` | GET complete composition package, including retained hidden frames |
+| `/api/storage` | GET image bytes and unique file counts, total and split by origin |
+
+Both portable package kinds contain one UTF-8 `manifest.json`. Its top-level
+`format` is `image-studio-asset` or `image-studio-composition`, `format_version`
+is `1`, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
+list of file records: `hash`, `media_type`, `size` (bytes), `width`, `height`,
+`stored_at`, and `filename`. Each file is the exact stored bytes at
+`files/<sha256>.<ext>`; extensions are `png`, `jpg` and `webp`. The SHA-256 of its
+contents equals the filename's hash. Every referenced file is present once, with
+no extra image files. Downloads use `<name-slug>-package.zip` with the same safe
+ASCII slug rules as sequence exports. The images-only S6 ZIP keeps its ordered
+frame filenames and contains no manifest.
+
+The asset manifest adds `asset`: `id`, `name`, `type_tag`, `description`,
+`project_id` (null means global visibility), `created_at`, `deleted_at`, and
+`images`. Every attachment is listed, regardless of approval or rejection. Image
+records contain `id`, `asset_id`, `file_hash`, `approved`, `rejected`, `source`,
+`created_at` (attachment time), and the stored file metadata (`hash`, `media_type`,
+`size`, `width`, `height`, `stored_at`). All its attached files are included.
+
+The complete composition manifest adds:
+
+- `project`: `id`, `name`, `instructions`, `created_at`.
+- `composition`: `id`, `project_id`, `name`, `scene`, `created_at`, `deleted_at`.
+- `asset_pack`: retained selections in position/ID order, with `id`,
+  `composition_id`, `asset_id`, `role`, `position`, `deselected_images`, `active`,
+  and `asset`. Asset records have the same fields as the asset package but only
+  list images used by the runs or pack: historical reference hashes, current
+  approved/non-rejected images of active selections, and images named by pack
+  or frame deselections. Removed selections remain with `active: false`.
+- `referenced_assets`: asset records for pinned references outside the pack,
+  listing only the referenced images.
+- `frames`: every frame in position/ID order, with `id`, `composition_id`, `name`,
+  `instructions`, `position`, `deselected_images`, `deleted_at`, `deleted`,
+  `final_generation_id`, `final_output`, `final`, and `runs`. `final` is null or
+  `{generation_id, output, hash}`; `output` is zero-based. Hidden frames have
+  `deleted: true` and keep their finals and runs.
+- Each run contains `run_id` and `generations`, in creation/ID order, including
+  retries. Every generation contains its complete database snapshot: `id`,
+  `run_id`, `retry_of`, `kind`, `variant_id`, `asset_id`, `model`, `model_info`,
+  `prompt` (as sent), `assembled_prompt`, `edited`, ordered `references`,
+  `placeholder`, `count`, `state`, `outputs` (ordered hashes), `attempts`, `error`,
+  `created_at`, `started_at`, `finished_at`. References retain `hash`, `asset_id`,
+  `asset_name`, `description`, `type_tag`, `role`, `media_type` as snapshotted.
+
+The complete package includes every file used by these asset records, references,
+outputs and finals. Current asset fields and flags describe export-time records;
+run snapshots still describe the exact earlier inputs. `placeholder` flags in
+snapshots and model metadata remain intact. Package manifests are built in a
+consistent read-only database transaction. Files are immutable, so streaming can
+continue after the transaction closes. Packages contain application records and
+images only: no endpoint credentials, environment values, configuration or server
+paths are added.
+
+**Storage** in the main navigation shows the bytes and `file_count` in `stored_files`,
+including deleted assets, hidden frames, rejected candidates and historical outputs.
+`/api/storage` returns `total`, `uploaded`, `generated`, `placeholder`, each with
+`bytes` and `file_count`. Shared hashes count once. For bytes that appear in several
+origins, uploaded attachments take precedence, then non-placeholder generation
+outputs, then placeholder outputs; a stored file without matching origin records
+is counted as generated. These disjoint categories sum to the total. The figure
+covers image files only, excluding database size and backups, and is computed from
+the database on each request. Refresh updates it. Exporting adds no storage.
+
+CI's `scripts/check_portability.py` prints Journey E proof of canonical replacement,
+byte-checkable packages, duplication, soft deletion, retained generation snapshots
+and files, complete frame/run contents, storage totals verified independently through
+SQL, and unchanged row counts. The following dump proof restores all these records.

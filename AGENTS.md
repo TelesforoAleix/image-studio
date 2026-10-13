@@ -22,6 +22,8 @@ overwrites or deletes them. A replacement is a new file; records point at the
 exact files they used. Rows are never hard-deleted; asset deletion sets a timestamp
 and image approval changes a flag while preserving attachments and stored files.
 
+Exports stream packages on request: they never write to storage or change records.
+
 Generations snapshot their exact prompt, model metadata and ordered reference inputs,
 and are never hard-deleted. Placeholder generation records are explicitly flagged.
 Dependencies may use permissive licences or weak copyleft (LGPL, MPL-2.0) when used

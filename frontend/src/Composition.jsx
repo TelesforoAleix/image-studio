@@ -583,7 +583,22 @@ function Storyboard({ comp, setComp, act, busy }) {
         </article>
       ))}
       <div className="panel">
-        <h3>Export sequence</h3>
+        <h3>Export composition</h3>
+        <p>
+          Export images downloads live frame finals. The complete package
+          includes the shared pack, every frame and run, and their reference
+          and output files.
+        </p>
+        <div className="actions export-actions">
+          {manifest?.entries.length > 0 && (
+            <a href={`/api/compositions/${comp.id}/sequence.zip`}>
+              Export images · {manifest.entries.length} images
+            </a>
+          )}
+          <a href={`/api/compositions/${comp.id}/export.zip`}>
+            Export complete package
+          </a>
+        </div>
         {manifest ? (
           <>
             <p>
@@ -591,11 +606,7 @@ function Storyboard({ comp, setComp, act, busy }) {
                 ? `Skipped (no final): ${manifest.skipped.map((v) => v.name).join(", ")}`
                 : "Every frame has a final image."}
             </p>
-            {manifest.entries.length ? (
-              <a href={`/api/compositions/${comp.id}/sequence.zip`}>
-                Export sequence · {manifest.entries.length} images
-              </a>
-            ) : (
+            {!manifest.entries.length && (
               <p>Select a final image to export.</p>
             )}
           </>

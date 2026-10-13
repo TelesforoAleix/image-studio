@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { api } from "./api";
+import { Storage } from "./Storage";
 import { Library } from "./Library";
 import { AssetPage } from "./AssetPage";
 import { ProjectForm } from "./ProjectForm";
@@ -73,6 +74,12 @@ function App() {
           >
             Projects
           </a>
+          <a
+            href="#storage"
+            aria-current={route === "storage" ? "page" : undefined}
+          >
+            Storage
+          </a>
         </nav>
       </header>
       {error && (
@@ -90,7 +97,9 @@ function App() {
           Working…
         </p>
       )}
-      {route === "projects" ? (
+      {route === "storage" ? (
+        <Storage act={act} busy={busy} />
+      ) : route === "projects" ? (
         <section>
           <h2>Projects</h2>
           <p className="intro">
