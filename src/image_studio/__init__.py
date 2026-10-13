@@ -11,7 +11,7 @@ from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from image_studio.api import api
 from image_studio.database import database_engine
 from image_studio.files import REQUEST_LIMIT
-from image_studio.generation_api import generation_api
+from image_studio.generation_api import generation_api as generation_blueprint
 from image_studio.image_client import ImageClient
 
 
@@ -34,7 +34,7 @@ def create_app() -> Flask:
         os.environ.get("IMAGE_API_BASE_URL", ""), os.environ.get("IMAGE_API_KEY", "")
     )
     app.register_blueprint(api)
-    app.register_blueprint(generation_api)
+    app.register_blueprint(generation_blueprint)
 
     @app.before_request
     def enforce_request_limit():

@@ -14,8 +14,11 @@ def assemble(project, composition, selections, variant):
             ):
                 numbers.append(str(len(references) + 1))
                 references.append(reference(asset, selection["role"], image))
+        description = (
+            f" — {asset['description']}" if asset["description"].strip() else ""
+        )
         parts.append(
-            f"{selection['role']}: {asset['name']} — {asset['description']}"
+            f"{selection['role']}: {asset['name']}{description}"
             + (
                 f" (reference images {', '.join(numbers)})"
                 if numbers
