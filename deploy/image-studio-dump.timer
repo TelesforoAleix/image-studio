@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily image studio database dump schedule
+PartOf=homelab-data.target
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=homelab-data.target

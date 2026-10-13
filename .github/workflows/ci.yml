@@ -44,6 +44,23 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+      - name: Verify deployment units
+        run: |
+          if ! command -v systemd-analyze >/dev/null; then
+            apt-get update && apt-get install -y --no-install-recommends systemd
+          fi
+          # Supply external dependencies absent in this disposable container;
+          # verify the real repository units unchanged. No services are started.
+          mkdir -p /tmp/studio-unit-check
+          for unit in docker.service homelab.service; do
+            printf '[Service]\nType=oneshot\nExecStart=/bin/true\n' > "/tmp/studio-unit-check/$unit"
+          done
+          printf '[Unit]\nDescription=CI volume target stub\n' > /tmp/studio-unit-check/homelab-data.target
+          if [ ! -x /usr/bin/docker ]; then
+            printf '#!/bin/sh\nexit 1\n' > /usr/bin/docker
+            chmod 755 /usr/bin/docker
+          fi
+          SYSTEMD_UNIT_PATH="$PWD/deploy:/tmp/studio-unit-check:" systemd-analyze verify --man=no deploy/image-studio.service deploy/image-studio-dump.service deploy/image-studio-dump.timer
       - run: uv run python scripts/check_no_data.py
       - uses: gitleaks/gitleaks-action@v3
         env:
@@ -104,6 +121,8 @@ jobs:
           PYCODE
       - name: Prove assets, projects, immutable files and restart persistence
         run: uv run python scripts/check_stack.py
+      - name: Prove database dump restores with matching tables and row counts
+        run: uv run python scripts/check_dump.py
       - name: Print app logs on failure
         if: failure()
         run: docker compose logs app
