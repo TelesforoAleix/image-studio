@@ -13,6 +13,7 @@ from image_studio.database import database_engine
 from image_studio.files import REQUEST_LIMIT
 from image_studio.generation_api import generation_api as generation_blueprint
 from image_studio.image_client import ImageClient
+from image_studio.portability import portability_api
 
 
 def create_app() -> Flask:
@@ -34,6 +35,7 @@ def create_app() -> Flask:
         os.environ.get("IMAGE_API_BASE_URL", ""), os.environ.get("IMAGE_API_KEY", "")
     )
     app.register_blueprint(api)
+    app.register_blueprint(portability_api)
     app.register_blueprint(generation_blueprint)
 
     @app.before_request

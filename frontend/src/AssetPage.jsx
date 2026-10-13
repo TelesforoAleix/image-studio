@@ -186,6 +186,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
         }
       />
       <div className="panel actions">
+        <a href={`/api/assets/${id}/export.zip`}>Export asset</a>
         <button
           disabled={busy}
           onClick={() =>

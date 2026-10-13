@@ -127,6 +127,8 @@ jobs:
         run: uv run python scripts/check_compare.py
       - name: Prove storyboard sequence with shared references and retained frames
         run: uv run python scripts/check_storyboard.py
+      - name: Prove portability, retained asset history and storage figures
+        run: uv run python scripts/check_portability.py
       - name: Prove database dump restores with matching tables and row counts
         run: |
           # Freeze periodic job writes while comparing the dump's exact row counts.
