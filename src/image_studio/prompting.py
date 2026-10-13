@@ -11,6 +11,7 @@ def assemble(project, composition, selections, variant):
                 image["approved"]
                 and not image["rejected"]
                 and image["id"] not in selection["deselected_images"]
+                and image["id"] not in variant.get("deselected_images", [])
             ):
                 numbers.append(str(len(references) + 1))
                 references.append(reference(asset, selection["role"], image))

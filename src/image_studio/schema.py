@@ -119,6 +119,8 @@ variants = Table(
         name="variant_final_pair",
     ),
     Column("position", Integer, nullable=False, server_default="0"),
+    Column("deleted_at", DateTime(timezone=True)),
+    Column("deselected_images", JSONB, nullable=False, server_default="[]"),
 )
 generations = Table(
     "generations",

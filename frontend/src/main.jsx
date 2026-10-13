@@ -49,6 +49,7 @@ function App() {
   }, [revision]);
   const projectMatch = /^project\/(\d+)$/.exec(route);
   const compositionMatch = /^composition\/(\d+)$/.exec(route);
+  const frameMatch = /^frame\/(\d+)$/.exec(route);
   const assetMatch = /^asset\/(\d+)$/.exec(route);
   return (
     <main>
@@ -114,6 +115,13 @@ function App() {
         <CompositionPage
           key={compositionMatch[1]}
           id={compositionMatch[1]}
+          act={act}
+          busy={busy}
+        />
+      ) : frameMatch ? (
+        <CompositionPage
+          key={`frame-${frameMatch[1]}`}
+          frameId={frameMatch[1]}
           act={act}
           busy={busy}
         />
