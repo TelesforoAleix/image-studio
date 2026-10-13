@@ -5,6 +5,8 @@ services:
       - "127.0.0.1:8200:8200"
     environment:
       DATABASE_URL: "postgresql://studio:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/studio"
+      IMAGE_API_BASE_URL: "${IMAGE_API_BASE_URL:-}"
+      IMAGE_API_KEY: "${IMAGE_API_KEY:-}"
     volumes:
       - ${STUDIO_FILES_PATH:-studio-files}:/app/files
     networks:
@@ -19,6 +21,25 @@ services:
       timeout: 6s
       retries: 12
       start_period: 10s
+  worker:
+    build: .
+    command: ["python", "-m", "image_studio.jobs"]
+    environment:
+      DATABASE_URL: "postgresql://studio:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/studio"
+      IMAGE_API_BASE_URL: "${IMAGE_API_BASE_URL:-}"
+      IMAGE_API_KEY: "${IMAGE_API_KEY:-}"
+    volumes:
+      - ${STUDIO_FILES_PATH:-studio-files}:/app/files
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 1900s
+  placeholder:
+    build: .
+    profiles: [placeholder]
+    command: ["gunicorn", "--bind", "0.0.0.0:8300", "--timeout", "60", "image_studio.placeholder:create_placeholder()"]
+    restart: unless-stopped
   postgres:
     image: postgres:17
     environment:

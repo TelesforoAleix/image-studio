@@ -86,7 +86,7 @@ jobs:
           python - <<'PYCODE'
           import secrets
           from pathlib import Path
-          Path('.env').write_text('POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n')
+          Path('.env').write_text('POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\nCOMPOSE_PROFILES=placeholder\nIMAGE_API_BASE_URL=http://placeholder:8300/v1\n')
           PYCODE
       - name: Build and start stack
         run: docker compose up -d --build --wait --wait-timeout 120
@@ -121,11 +121,17 @@ jobs:
           PYCODE
       - name: Prove assets, projects, immutable files and restart persistence
         run: uv run python scripts/check_stack.py
+      - name: Prove first generation, snapshots, retries and persistence
+        run: uv run python scripts/check_generation.py
       - name: Prove database dump restores with matching tables and row counts
-        run: uv run python scripts/check_dump.py
+        run: |
+          # Freeze periodic job writes while comparing the dump's exact row counts.
+          docker compose stop worker
+          uv run python scripts/check_dump.py
+          docker compose start worker
       - name: Print app logs on failure
         if: failure()
-        run: docker compose logs app
+        run: docker compose logs app worker placeholder
       - name: Tear down throwaway stack
         if: always()
         run: docker compose down -v

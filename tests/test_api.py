@@ -71,6 +71,11 @@ def test_migration_is_idempotent_and_matches_definitions(client):
         "stored_files",
         "asset_images",
         "alembic_version",
+        "compositions",
+        "composition_assets",
+        "variants",
+        "generations",
+        "image_models",
     }
     with engine.connect() as connection:
         assert compare_metadata(MigrationContext.configure(connection), metadata) == []
@@ -78,7 +83,7 @@ def test_migration_is_idempotent_and_matches_definitions(client):
             connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
             ).scalar_one()
-            == "0001"
+            == "0002"
         )
 
 
