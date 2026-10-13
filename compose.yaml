@@ -5,6 +5,8 @@ services:
       - "127.0.0.1:8200:8200"
     environment:
       DATABASE_URL: "postgresql://studio:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/studio"
+    volumes:
+      - studio-files:/app/files
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,3 +33,4 @@ services:
 
 volumes:
   postgres-data:
+  studio-files:

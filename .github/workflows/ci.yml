@@ -11,10 +11,25 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    container: python:3.13-bookworm
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_DB: studio
+          POSTGRES_PASSWORD: synthetic-test-only
+        options: >-
+          --health-cmd "pg_isready -U studio -d studio"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql://studio:synthetic-test-only@postgres:5432/studio
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Trust only this disposable container's checkout, across action HOME changes.
+      - run: git config --system --add safe.directory "$GITHUB_WORKSPACE"
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.13'
@@ -34,6 +49,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: 'false'
+          # The uploader assumes a host workspace; scans still gate this job.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
       # The action scopes its scan to the event; also scan all history.
       - run: gitleaks git --redact --log-opts=--all
 
@@ -42,6 +59,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.13'
+      - run: uv sync --locked
       - name: Create throwaway database password
         run: |
           umask 077
@@ -81,6 +102,8 @@ jobs:
           else:
               raise AssertionError('Unknown API route did not return 404')
           PYCODE
+      - name: Prove assets, projects, immutable files and restart persistence
+        run: uv run python scripts/check_stack.py
       - name: Print app logs on failure
         if: failure()
         run: docker compose logs app

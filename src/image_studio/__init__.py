@@ -1,19 +1,50 @@
-"""Single-origin studio skeleton: a JSON API and a built React application."""
+"""Single-origin studio: project and asset API and a built React application."""
 
 import os
 from pathlib import Path
 
 import psycopg
 from flask import Flask, jsonify, request, send_from_directory
-from werkzeug.exceptions import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
+
+from image_studio.api import api
+from image_studio.database import database_engine
+from image_studio.files import REQUEST_LIMIT
 
 
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=None)
     app.config.from_mapping(
         DATABASE_URL=os.environ.get("DATABASE_URL", ""),
+        STUDIO_FILES=Path(os.environ.get("STUDIO_FILES", "data/files")).resolve(),
+        MAX_CONTENT_LENGTH=REQUEST_LIMIT,
+        MAX_FORM_MEMORY_SIZE=REQUEST_LIMIT,
         FRONTEND_DIST=Path(os.environ.get("FRONTEND_DIST", "frontend/dist")).resolve(),
     )
+
+    app.extensions["database"] = (
+        database_engine(app.config["DATABASE_URL"])
+        if app.config["DATABASE_URL"]
+        else None
+    )
+    app.register_blueprint(api)
+
+    @app.before_request
+    def enforce_request_limit():
+        if request.content_length and request.content_length > REQUEST_LIMIT:
+            raise RequestEntityTooLarge("Maximum request size is 90 MB")
+
+    @app.errorhandler(SQLAlchemyError)
+    def database_error(error):
+        app.logger.error("Database operation failed")
+        return jsonify(error="Database temporarily unavailable"), 503
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        if request.path == "/api" or request.path.startswith("/api/"):
+            return jsonify(error="Internal server error"), 500
+        return error
 
     @app.get("/api/health")
     def health():
@@ -30,7 +61,9 @@ def create_app() -> Flask:
     @app.errorhandler(HTTPException)
     def http_error(error):
         if request.path == "/api" or request.path.startswith("/api/"):
-            message = "Unknown API route" if error.code == 404 else error.name
+            message = error.description
+            if error.code == 413 and message == error.__class__().description:
+                message = "Maximum request size is 90 MB"
             return jsonify(error=message), error.code
         return error
 
