@@ -299,6 +299,7 @@ def test_frame_deselections_renumber_without_changing_shared_pack():
             "id": i,
             "hash": str(i),
             "approved": True,
+            "source": "uploaded",
             "rejected": False,
             "media_type": "image/png",
         }

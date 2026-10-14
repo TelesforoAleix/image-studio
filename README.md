@@ -6,7 +6,7 @@ creates the images over HTTP. This repository holds code only; user work lives
 outside it.
 
 The app manages projects with shared creative instructions and a reusable asset
-library. All assets are global, with descriptions, optional type tags,
+library. All assets are global, with fixed types, descriptions, preservation rules, optional labels,
 and uploaded images that can be approved as canonical references. Duplicate assets
 share their files and approvals; deletion hides assets while preserving their rows
 and files. Compositions and asset reference views can queue image generations.
@@ -106,16 +106,16 @@ The API uses JSON, except multipart uploads with one or more `files` fields:
 
 | Routes | Methods / behaviour |
 | --- | --- |
-| `/api/projects` | GET list, POST create (`name`, `instructions`) |
+| `/api/projects` | GET list, POST create (`name`, `instructions`, optional `style_asset_id`) |
 | `/api/projects/<id>` | GET read, PATCH edit |
-| `/api/assets` | GET list, POST create (`name`, `type_tag`, `description`) |
+| `/api/assets` | GET list, POST create (`name`, `type`, `type_tag`, `description`, `preserve`) |
 | `/api/assets/<id>` | GET with images, PATCH edit, DELETE soft-delete |
 | `/api/assets/<id>/duplicate` | POST copy fields and image approvals |
 | `/api/assets/<id>/images` | POST multipart upload |
 | `/api/assets/<id>/images/<image-id>` | PATCH `{"approved": true}` or `false` |
 | `/api/files/<sha256>` | GET original bytes with stored media type and immutable caching |
 
-Assets expose no visibility field or control. List filtering accepts `type_tag` and
+Assets expose no visibility field or control. List filtering accepts `type`, `type_tag` and
 `used_by_project` (only assets actively used by that project's live compositions).
 Assets are live by default; `include_deleted=true`
 includes deleted assets in list and read responses. Deleted assets cannot be edited,
@@ -228,7 +228,7 @@ unlock chain untouched.
 Compositions optionally belong to projects, each starting with a variant named **Frame 1**. Add global
 assets with a role, toggle their approved reference images, and write scene and
 frame instructions. The fixed prompt preview combines project instructions (when present), composition direction, scene,
-asset roles/names/descriptions with references numbered in request order, then frame
+style, scene, asset roles/names/types/descriptions and preservation rules with references numbered in request order, then frame
 instructions. Empty parts are omitted; past snapshots are never rewritten. Edit replaces the prompt for that generation; Reset restores assembly.
 Choose one to three image models, each with one to four outputs. One press of
 Generate creates a run with the same prompt and ordered references for every model.
@@ -433,7 +433,7 @@ or rewriting image bytes. Import and permanent deletion are not available.
 
 Both portable package kinds contain one UTF-8 `manifest.json`. Its top-level
 `format` is `image-studio-asset` or `image-studio-composition`, `format_version`
-is `1` for assets and `2` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
+is `2` for assets and `3` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
 list of file records: `hash`, `media_type`, `size` (bytes), `width`, `height`,
 `stored_at`, and `filename`. Each file is the exact stored bytes at
 `files/<sha256>.<ext>`; extensions are `png`, `jpg` and `webp`. The SHA-256 of its
@@ -442,7 +442,7 @@ no extra image files. Downloads use `<name-slug>-package.zip` with the same safe
 ASCII slug rules as sequence exports. The images-only S6 ZIP keeps its ordered
 frame filenames and contains no manifest.
 
-The asset manifest adds `asset`: `id`, `name`, `type_tag`, `description`,
+The asset manifest adds `asset`: `id`, `name`, `type`, `type_tag` (label), `description`, `preserve`,
 `project_id` (always null; all assets are global), `created_at`, `deleted_at`, and
 `images`. Every attachment is listed, regardless of approval or rejection. Image
 records contain `id`, `asset_id`, `file_hash`, `approved`, `rejected`, `source`,
@@ -472,7 +472,7 @@ The complete composition manifest adds:
   `prompt` (as sent), `assembled_prompt`, `edited`, ordered `references`,
   `placeholder`, `count`, `state`, `outputs` (ordered hashes), `attempts`, `service_failures`, `error`,
   `created_at`, `started_at`, `finished_at`. References retain `hash`, `asset_id`,
-  `asset_name`, `description`, `type_tag`, `role`, `media_type` and, for new runs, `sent_size` as snapshotted.
+  `asset_name`, `type`, `description`, `preserve`, `type_tag`, `role`, `media_type` and, for new runs, `sent_size` as snapshotted.
 
 The complete package includes every file used by these asset records, references,
 outputs and finals. Current asset fields and flags describe export-time records;
@@ -510,3 +510,87 @@ upgrades preserve the owner's existing project, single composition, frame, runs 
 final unchanged. CI prints the S8 migration/downgrade retention proof and the
 stand-alone/move/kind/list/duplicate/export journey in `check_structure*.py`, then
 runs dump restore alongside the retained earlier journeys.
+
+
+## Types, preservation, styles and originals
+
+Assets have the same fields for every type: **Person** (`person`),
+**Garment/Product** (`garment_product`), **Object/Vehicle** (`object_vehicle`),
+**Environment** (`environment`), **Style** (`style`) and **Other** (`other`).
+The required stored `type` defaults to `other` for older API clients; the form always
+supplies it. Types are validated by the API and adding a type extends the value map.
+The old optional `type_tag` remains a free label. Assets filters by type.
+**What must stay the same** (`preserve`, empty by default) holds preservation rules
+beside the description, such as face shape and eyebrows or button count and lapel
+proportions. Duplicate copies all these fields and shares immutable files.
+
+A Style is a normal asset with a description, optional preservation rules and
+approved reference images. Choose a style on a project page or a composition's
+Setup tab. A composition's own style replaces its project's; an empty choice uses
+the project's style. Only live Style assets appear in the style picker, and Style
+assets cannot be pack subjects. Changing a picked style's type requires clearing
+its choices first; changing a subject to Style requires removing it from packs.
+Deleting a style hides it from choices and future assembly; existing snapshots
+remain readable. A deleted composition style does not fall back to the project
+until its own choice is cleared.
+
+An asset page separates **References**, **Originals**, and generated candidates
+waiting for review, followed by **Generate reference views**. Originals are all
+uploads; References are approved, non-rejected images of either source. An approved
+upload appears in both lists. Approve makes an upload or candidate a Reference;
+Unapprove retains the attachment and bytes. Generated references show linked
+original thumbnails in the order recorded by their producing generation. Lineage
+is read from that snapshot, never stored again on the image. For identical output
+hashes the earliest producing generation identifies the attachment's lineage;
+duplicated attachments share it. Rejected images stay hidden unless requested.
+
+In a composition, References are on by default. Unapproved Originals are off until
+ticked in the shared pack or for an individual frame. Frame toggles can exclude
+pack images, including selected Originals. Each asset sends References first and
+then selected unapproved Originals, without sending an approved upload twice.
+The style's References come first in request order, with role `style reference`;
+subjects follow pack order. Style references can be switched off per composition
+and per frame and count against each model's `max_references`.
+
+The fixed template is project instructions, composition direction, the optional
+style line, scene, one line per subject, then frame instructions. Empty parts are
+omitted. Subject lines are `role: name (Type) — description`, followed by
+`Keep: <preserve>` when nonempty and the ordered reference numbers. The style line
+is `Style: <name> — <description>`, followed by its optional `Keep: <preserve>` and
+reference numbers. Reference views use the asset's type and `keep: <preserve>` and
+send all its Originals. Earlier generation prompts and reference snapshots are
+never rewritten; new reference snapshots also include `type` and `preserve`.
+
+Project and composition create/PATCH accept nullable `style_asset_id`. Composition
+PATCH also accepts `style_deselected_images`; GET includes the effective `style`
+and its images. Pack PUT and frame PATCH accept `selected_originals` (unique image
+IDs); `deselected_images` excludes references or pack-selected Originals. Asset
+GET includes `originals`, `references` and `images`; generated image records include
+`lineage: {generation_id, originals}` from the producing snapshot.
+
+Alembic 0007 adds these columns with empty selections and no style choice. For
+existing labels it trims and matches whole keywords case-insensitively:
+
+| Type | Legacy label keywords |
+| --- | --- |
+| Person | person, people, character, model |
+| Garment/Product | garment, clothing, product, shoe |
+| Object/Vehicle | object, vehicle, car, lamp, furniture |
+| Environment | environment, background, location, place, room |
+| Style | style, look |
+| Other | every other label, including empty |
+
+The exact label text is retained. Descriptions, attachments, files, generations,
+frames, runs and final choices are unchanged. Downgrade removes only the new
+columns and restores R1 rows. CI proves a fresh upgrade and R1 upgrade twice,
+downgrade and re-upgrade with `character`, `lamp` and an unknown label.
+
+Asset package **version 2** adds `type`, label and `preserve` plus Originals,
+References and generated lineage. Composition package **version 3** adds these
+asset fields, project/composition `style_asset_id`, effective `style`, style
+selections, pack/frame `selected_originals` and new reference metadata. Historical
+style inputs remain in run snapshots and `referenced_assets` after style deletion.
+Packages retain the files used by selections and history and still stream without
+storing an archive or changing any record. `scripts/check_richer_assets.py` prints
+the complete placeholder journey, reference order and limits, lineage, style
+inheritance/replacement/deletion, both package versions and unchanged snapshots.

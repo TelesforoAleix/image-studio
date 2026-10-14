@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from werkzeug.exceptions import ServiceUnavailable
 
 from image_studio.api import get_row, images_for, serial
-from image_studio.generation_api import selected_final
+from image_studio.generation_api import effective_style, selected_final
 from image_studio.schema import (
     asset_images,
     assets,
@@ -45,7 +45,7 @@ def snapshot(function):
 def manifest(kind):
     return {
         "format": f"image-studio-{kind}",
-        "format_version": 2 if kind == "composition" else 1,
+        "format_version": 3 if kind == "composition" else 2,
         "exported_at": datetime.now(UTC).isoformat(),
     }
 
@@ -58,7 +58,19 @@ def asset_record(connection, identifier, *, hashes=None, image_ids=()):
         for image in images_for(connection, identifier)
         if hashes is None or image["hash"] in hashes or image["id"] in image_ids
     ]
+    record["originals"] = [i for i in record["images"] if i["source"] == "uploaded"]
+    record["references"] = [
+        i for i in record["images"] if i["approved"] and not i["rejected"]
+    ]
     return record
+
+
+def record_hashes(record):
+    return {i["hash"] for i in record["images"]} | {
+        ref["hash"]
+        for image in record["images"]
+        for ref in (image.get("lineage") or {}).get("originals", [])
+    }
 
 
 def file_records(connection, hashes):
@@ -78,9 +90,7 @@ def file_records(connection, hashes):
 def asset_manifest(connection, identifier):
     result = manifest("asset")
     result["asset"] = asset_record(connection, identifier)
-    result["files"] = file_records(
-        connection, {i["hash"] for i in result["asset"]["images"]}
-    )
+    result["files"] = file_records(connection, record_hashes(result["asset"]))
     return result
 
 
@@ -93,8 +103,10 @@ def composition_manifest(connection, identifier):
         else None
     )
     result["composition"] = serial(comp)
+    style = effective_style(connection, comp)
+    result["style"] = asset_record(connection, style["id"]) if style else None
     result["frames"] = []
-    hashes = set()
+    hashes = record_hashes(result["style"]) if result["style"] else set()
     reference_hashes = {}
     deselected = set()
     for frame in connection.execute(
@@ -109,6 +121,7 @@ def composition_manifest(connection, identifier):
             "runs": [],
         }
         deselected.update(frame["deselected_images"])
+        deselected.update(frame["selected_originals"])
         runs = {}
         for row in connection.execute(
             select(generations)
@@ -146,15 +159,19 @@ def composition_manifest(connection, identifier):
             connection,
             asset_id,
             hashes=used,
-            image_ids=deselected | set(selection["deselected_images"]),
+            image_ids=deselected
+            | set(selection["deselected_images"])
+            | set(selection["selected_originals"]),
         )
-        hashes.update(i["hash"] for i in record["images"])
+        hashes.update(record_hashes(record))
         result["asset_pack"].append({**serial(selection), "asset": record})
     # Pinned drafts may refer to assets that have never belonged to this pack.
     result["referenced_assets"] = [
         asset_record(connection, asset_id, hashes=reference_hashes[asset_id])
         for asset_id in sorted(reference_hashes.keys() - pack_ids)
     ]
+    for record in result["referenced_assets"]:
+        hashes.update(record_hashes(record))
     result["files"] = file_records(connection, hashes)
     return result
 

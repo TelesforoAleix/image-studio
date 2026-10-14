@@ -57,8 +57,8 @@ def main():
         ]:
             connection.execute(text(statement))
     before = snapshot(engine)
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0006")
+    command.upgrade(config, "0006")
     after = snapshot(engine)
     assert [r["kind"] for r in after["compositions"]] == ["single", "storyboard"]
     assert all(r["direction"] == "" for r in after["compositions"])
@@ -88,8 +88,8 @@ def main():
         restored,
         flush=True,
     )
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0006")
+    command.upgrade(config, "0006")
     assert snapshot(engine) == after
     engine.dispose()
 

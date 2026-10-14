@@ -83,7 +83,7 @@ def test_migration_is_idempotent_and_matches_definitions(client):
             connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
             ).scalar_one()
-            == "0006"
+            == "0007"
         )
 
 
@@ -114,7 +114,11 @@ def test_asset_routes_are_global(client):
     asset = new_asset(c, type_tag="garment", description="Synthetic description")
     assert "project_id" not in asset
     assert c.get("/api/assets?type_tag=garment").json == [
-        {k: v for k, v in asset.items() if k != "images"}
+        {
+            k: v
+            for k, v in asset.items()
+            if k not in ("images", "originals", "references")
+        }
     ]
     edited = c.patch(f"/api/assets/{asset['id']}", json={"description": "Changed"})
     assert edited.status_code == 200 and edited.json["description"] == "Changed"

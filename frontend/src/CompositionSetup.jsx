@@ -1,5 +1,6 @@
 import React from "react";
 import { api } from "./api";
+import { StylePicker } from "./StylePicker";
 import { Selection } from "./CompositionControls";
 
 export function CompositionSetup({
@@ -26,8 +27,87 @@ export function CompositionSetup({
   saveSelection,
   variant,
 }) {
+  const selections = [
+    ...comp.assets,
+    ...(comp.style
+      ? [
+          {
+            asset: comp.style,
+            deselected_images: comp.style_deselected_images,
+            selected_originals: [],
+            style: true,
+          },
+        ]
+      : []),
+  ];
+  const frameImages = selections.flatMap((s) =>
+    s.asset.images
+      .filter(
+        (i) =>
+          !i.rejected &&
+          !s.deselected_images.includes(i.id) &&
+          (i.approved || (!s.style && i.source === "uploaded")),
+      )
+      .map((i) => ({
+        ...i,
+        asset: s.asset,
+        defaultOn: i.approved || s.selected_originals.includes(i.id),
+      })),
+  );
   return (
     <>
+      <div className="panel">
+        <StylePicker
+          value={comp.style_asset_id}
+          inherit
+          {...{ act, busy }}
+          onChange={(style_asset_id) =>
+            act(async () =>
+              setComp(
+                await api(`/compositions/${comp.id}`, "PATCH", {
+                  style_asset_id,
+                  style_deselected_images: [],
+                }),
+              ),
+            )
+          }
+        />
+        {comp.style && (
+          <>
+            <p>Using {comp.style.name}</p>
+            <div className="reference-toggles">
+              {comp.style.images
+                .filter((i) => i.approved && !i.rejected)
+                .map((i) => (
+                  <label key={i.id}>
+                    <img src={`/api/files/${i.hash}`} alt={comp.style.name} />
+                    <span>
+                      <input
+                        type="checkbox"
+                        disabled={busy}
+                        checked={!comp.style_deselected_images.includes(i.id)}
+                        onChange={(e) =>
+                          act(async () =>
+                            setComp(
+                              await api(`/compositions/${comp.id}`, "PATCH", {
+                                style_deselected_images: e.target.checked
+                                  ? comp.style_deselected_images.filter(
+                                      (x) => x !== i.id,
+                                    )
+                                  : [...comp.style_deselected_images, i.id],
+                              }),
+                            ),
+                          )
+                        }
+                      />
+                      Use style reference {i.id}
+                    </span>
+                  </label>
+                ))}
+            </div>
+          </>
+        )}
+      </div>
       <form
         className="panel"
         onSubmit={(e) => {
@@ -156,53 +236,46 @@ export function CompositionSetup({
         <>
           <div className="panel">
             <h3>References for this frame</h3>
-            <p>Switch off selected pack images for this frame only.</p>
+            <p>Choose references and optional originals for this frame only.</p>
             <div className="reference-toggles">
-              {comp.assets.flatMap((s) =>
-                s.asset.images
-                  .filter(
-                    (i) =>
-                      i.approved &&
-                      !i.rejected &&
-                      !s.deselected_images.includes(i.id),
-                  )
-                  .map((i) => (
-                    <label key={i.id}>
-                      <img src={`/api/files/${i.hash}`} alt={s.asset.name} />
-                      <span>
-                        <input
-                          type="checkbox"
-                          disabled={busy}
-                          checked={!variant.deselected_images.includes(i.id)}
-                          onChange={(e) =>
-                            act(async () => {
-                              const available = comp.assets.flatMap((s) =>
-                                s.asset.images
-                                  .filter(
-                                    (i) =>
-                                      i.approved &&
-                                      !i.rejected &&
-                                      !s.deselected_images.includes(i.id),
-                                  )
-                                  .map((i) => i.id),
-                              );
-                              const deselected =
-                                variant.deselected_images.filter(
-                                  (x) => available.includes(x) && x !== i.id,
-                                );
-                              if (!e.target.checked) deselected.push(i.id);
-                              await api(`/variants/${variant.id}`, "PATCH", {
-                                deselected_images: deselected,
-                              });
-                              setComp(await api(`/compositions/${comp.id}`));
-                            })
-                          }
-                        />
-                        Use {s.asset.name} reference {i.id}
-                      </span>
-                    </label>
-                  )),
-              )}
+              {frameImages.map((i) => (
+                <label key={i.id}>
+                  <img src={`/api/files/${i.hash}`} alt={i.asset.name} />
+                  <span>
+                    <input
+                      type="checkbox"
+                      disabled={busy}
+                      checked={
+                        (i.defaultOn ||
+                          variant.selected_originals.includes(i.id)) &&
+                        !variant.deselected_images.includes(i.id)
+                      }
+                      onChange={(e) =>
+                        act(async () => {
+                          const deselected = variant.deselected_images.filter(
+                            (x) =>
+                              frameImages.some((i) => i.id === x) && x !== i.id,
+                          );
+                          const originals = variant.selected_originals.filter(
+                            (x) => x !== i.id,
+                          );
+                          if (!e.target.checked && i.defaultOn)
+                            deselected.push(i.id);
+                          if (e.target.checked && !i.approved && !i.defaultOn)
+                            originals.push(i.id);
+                          await api(`/variants/${variant.id}`, "PATCH", {
+                            deselected_images: deselected,
+                            selected_originals: originals,
+                          });
+                          setComp(await api(`/compositions/${comp.id}`));
+                        })
+                      }
+                    />
+                    Use {i.asset.name} {i.approved ? "reference" : "original"}{" "}
+                    {i.id}
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
         </>

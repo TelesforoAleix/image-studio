@@ -91,6 +91,7 @@ export function CompositionPage({
         await api(`/compositions/${comp.id}/assets/${s.asset_id}`, "PUT", {
           role: s.role,
           deselected_images: s.deselected_images,
+          selected_originals: s.selected_originals,
         }),
       ),
     );
@@ -115,7 +116,7 @@ export function CompositionPage({
       return !info || references.length > info.max_references;
     });
   const available = assets.filter(
-    (a) => !comp.assets.some((s) => s.asset_id === a.id),
+    (a) => a.type !== "style" && !comp.assets.some((s) => s.asset_id === a.id),
   );
   return (
     <section>

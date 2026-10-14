@@ -25,7 +25,7 @@ def unpack(data):
     with ZipFile(io.BytesIO(data)) as archive:
         package = json.loads(archive.read("manifest.json"))
         assert package["format_version"] == (
-            2 if package["format"] == "image-studio-composition" else 1
+            3 if package["format"] == "image-studio-composition" else 2
         )
         assert package["exported_at"]
         assert set(archive.namelist()) == {"manifest.json"} | {
@@ -54,7 +54,7 @@ def test_stream_package_without_staging(tmp_path):
     (tmp_path / digest).write_bytes(content)
     package = {
         "format": "image-studio-asset",
-        "format_version": 1,
+        "format_version": 2,
         "exported_at": "synthetic",
         "files": [
             {"hash": digest, "size": len(content), "filename": f"files/{digest}.png"}

@@ -21,7 +21,7 @@ export function Selection({ selection, save, remove, busy }) {
       )}
       <div className="reference-toggles">
         {selection.asset.images
-          .filter((i) => i.approved && !i.rejected)
+          .filter((i) => !i.rejected && (i.approved || i.source === "uploaded"))
           .map((i) => (
             <label key={i.id}>
               <img src={`/api/files/${i.hash}`} alt={selection.asset.name} />
@@ -29,17 +29,33 @@ export function Selection({ selection, save, remove, busy }) {
                 <input
                   type="checkbox"
                   disabled={busy}
-                  checked={!selection.deselected_images.includes(i.id)}
+                  checked={
+                    i.approved
+                      ? !selection.deselected_images.includes(i.id)
+                      : selection.selected_originals.includes(i.id)
+                  }
                   onChange={(e) =>
                     save({
                       ...selection,
-                      deselected_images: e.target.checked
-                        ? selection.deselected_images.filter((x) => x !== i.id)
-                        : [...selection.deselected_images, i.id],
+                      ...(i.approved
+                        ? {
+                            deselected_images: e.target.checked
+                              ? selection.deselected_images.filter(
+                                  (x) => x !== i.id,
+                                )
+                              : [...selection.deselected_images, i.id],
+                          }
+                        : {
+                            selected_originals: e.target.checked
+                              ? [...selection.selected_originals, i.id]
+                              : selection.selected_originals.filter(
+                                  (x) => x !== i.id,
+                                ),
+                          }),
                     })
                   }
                 />
-                Use reference {i.id}
+                Use {i.approved ? "reference" : "original"} {i.id}
               </span>
             </label>
           ))}

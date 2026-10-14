@@ -79,7 +79,7 @@ def main():
     assert exported["project"] is None and exported["composition"]["kind"] == "single"
     assert all(s["asset"]["project_id"] is None for s in exported["asset_pack"])
     print(
-        "PROOF STRUCTURE 2 both stand-alone exports work; package version 2 "
+        "PROOF STRUCTURE 2 both stand-alone exports work; package version 3 "
         "project null and assets global",
         flush=True,
     )
