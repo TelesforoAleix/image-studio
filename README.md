@@ -228,19 +228,23 @@ unlock chain untouched.
 
 Compositions optionally belong to projects, each starting with a variant named **Frame 1**. Add global
 assets with a role, toggle their approved reference images, and write scene and
-frame instructions. The fixed prompt preview combines project instructions (when present), composition direction, scene,
-style, scene, asset roles/names/types/descriptions and preservation rules with references numbered in request order, then frame
-instructions. Empty parts are omitted; past snapshots are never rewritten. Edit replaces the prompt for that generation; Reset restores assembly.
-Choose one to three image models, each with one to four outputs. One press of
-Generate creates a run with the same prompt and ordered references for every model.
+frame instructions. The fixed shared template combines project instructions (when
+present), composition direction, style, scene, asset roles/names/types/descriptions
+and preservation rules, then frame instructions. Empty parts are omitted; past
+snapshots are never rewritten. Each model's preview renders this shared intent and
+ordered references in its family's notation. Edit replaces only that model's
+prompt; Reset restores its rendering. Choose one to three image models, each with
+one to four outputs, a shared format and each model's priced quality or resolution.
+One press of Generate creates a run retaining each model's exact inputs and settings.
 Results appear in model columns with paid and placeholder badges, licence and prices; failures keep
 their error beside successful outputs. Every result remains in history.
 On an asset page, Generate reference views uses its uploaded photos; generated
 candidates can be approved or rejected individually. Rejected candidates are hidden
 by default, with a toggle to show them; their attachments and files remain stored.
 
-Generations preserve the prompt actually sent, assembled prompt, edit flag, model
-name and metadata, ordered reference hashes with asset descriptions and roles,
+Generations preserve shared content, rendered prompt, prompt actually sent, family,
+edit flag, settings, estimated cost, request fields, model name and metadata,
+ordered reference hashes with asset descriptions and roles,
 output hashes, state, attempts, service failure count, error and timestamps. Later asset edits and approval
 changes never alter these snapshots. Generations have no delete endpoint. Placeholder
 trial generations carry `placeholder: true` so a later deliberate cleanup can identify
@@ -276,9 +280,9 @@ capabilities shown by the UI. Non-image models are ignored (`mode` must be
 `price_estimated`. Prices are USD: the lowest configured price is shown as “from $X
 per image”, plus reference pricing where supplied, labelled “estimated” where applicable.
 All profile fields, including unknown ones, are kept in cached metadata and generation
-snapshots. `prompt_family`, `reference_slots`, `price_checked`, `aspect_ratios`,
-`resolutions`, `sizes`, `advanced` and `max_prompt_chars` are retained; this slice
-adds no per-run settings or model-specific prompt rendering.
+snapshots. Rendering and run settings also read `prompt_family`, `reference_slots`,
+`aspect_ratios`, `qualities`, `resolutions`, `sizes`, `advanced` and
+`max_prompt_chars`; `price_checked` remains retained as supplied.
 
 Last successful metadata is persisted to allow queueing during endpoint outages;
 retired entries are marked unlisted, never deleted. Queuing and retrying refuse models
