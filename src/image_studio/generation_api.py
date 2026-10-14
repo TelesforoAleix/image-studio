@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
 
 from image_studio.api import get_row, images_for, serial, transaction, validate_style
+from image_studio.feedback import generation_record, model_tallies, validate_feedback
 from image_studio.image_client import prepare_reference
 from image_studio.jobs import defer
 from image_studio.prompting import assemble, reference_view
@@ -20,6 +21,7 @@ from image_studio.schema import (
     compositions,
     generations,
     image_models,
+    output_feedback,
     projects,
     stored_files,
     variants,
@@ -745,7 +747,9 @@ def queue(connection, preview, kind, **owner):
         .returning(generations.c.id)
     ).scalar_one()
     defer(connection, identifier)
-    return jsonify(serial(get_row(connection, generations, identifier))), 201
+    return jsonify(
+        generation_record(connection, get_row(connection, generations, identifier))
+    ), 201
 
 
 @generation_api.route("/variants/<int:identifier>/generations", methods=["GET", "POST"])
@@ -789,7 +793,7 @@ def asset_preview(connection, identifier):
 def history(connection, condition):
     return jsonify(
         [
-            serial(r)
+            generation_record(connection, r)
             for r in connection.execute(
                 select(generations).where(condition).order_by(generations.c.id.desc())
             ).mappings()
@@ -800,7 +804,9 @@ def history(connection, condition):
 @generation_api.get("/generations/<int:identifier>")
 @transaction
 def generation(connection, identifier):
-    return jsonify(serial(get_row(connection, generations, identifier)))
+    return jsonify(
+        generation_record(connection, get_row(connection, generations, identifier))
+    )
 
 
 def run_choices(value):
@@ -871,7 +877,7 @@ def draft_references(connection, supplied):
 
 def run_detail(connection, variant_id, run_id):
     rows = [
-        serial(r)
+        generation_record(connection, r)
         for r in connection.execute(
             select(generations)
             .where(
@@ -1007,7 +1013,9 @@ def retry_generation(connection, identifier):
         .returning(generations.c.id)
     ).scalar_one()
     defer(connection, row_id)
-    return jsonify(serial(get_row(connection, generations, row_id))), 201
+    return jsonify(
+        generation_record(connection, get_row(connection, generations, row_id))
+    ), 201
 
 
 @generation_api.route(
@@ -1103,3 +1111,38 @@ def render_preview(connection):
             }
         )
     return jsonify(result)
+
+
+@generation_api.patch("/generations/<int:identifier>/outputs/<int:output>/feedback")
+@transaction
+def edit_output_feedback(connection, identifier, output):
+    row = get_row(connection, generations, identifier)
+    if output >= len(row["outputs"]):
+        raise NotFound("Output not found")
+    value = validate_feedback(
+        body(["verdict", "asset_ratings", "note"]), row["references"]
+    )
+    if not value:
+        raise BadRequest("Supply at least one feedback field")
+    connection.execute(
+        pg_insert(output_feedback)
+        .values(generation_id=identifier, output_index=output, **value)
+        .on_conflict_do_update(
+            index_elements=["generation_id", "output_index"],
+            set_={**value, "updated_at": func.now()},
+        )
+    )
+    return jsonify(generation_record(connection, row)["feedback"][output])
+
+
+@generation_api.get("/variants/<int:identifier>/feedback-tally")
+@transaction
+def feedback_tally(connection, identifier):
+    get_row(connection, variants, identifier)
+    rows = [
+        generation_record(connection, row)
+        for row in connection.execute(
+            select(generations).where(generations.c.variant_id == identifier)
+        ).mappings()
+    ]
+    return jsonify(model_tallies(rows))

@@ -97,6 +97,7 @@ jobs:
           docker compose run --rm -T --no-deps app python - < scripts/check_structure_migration.py
           docker compose run --rm -T --no-deps app python - < scripts/check_richer_migration.py
           docker compose run --rm -T --no-deps app python - < scripts/check_model_requests_migration.py
+          docker compose run --rm -T --no-deps app python - < scripts/check_feedback_migration.py
           docker compose up -d --wait --wait-timeout 120
       - name: Fetch page, health and unknown API route
         run: |
@@ -145,6 +146,8 @@ jobs:
         run: uv run python scripts/check_richer_assets.py
       - name: Prove per-model rendering, priced settings, sent fields and reuse
         run: uv run python scripts/check_model_requests.py
+      - name: Prove output verdicts, detailed feedback, model tallies and version 4 export
+        run: uv run python scripts/check_feedback.py
       - name: Prove database dump restores with matching tables and row counts
         run: |
           # Freeze periodic job writes while comparing the dump's exact row counts.

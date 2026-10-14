@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from werkzeug.exceptions import ServiceUnavailable
 
 from image_studio.api import get_row, images_for, serial
+from image_studio.feedback import generation_record
 from image_studio.generation_api import effective_style, selected_final
 from image_studio.schema import (
     asset_images,
@@ -45,7 +46,7 @@ def snapshot(function):
 def manifest(kind):
     return {
         "format": f"image-studio-{kind}",
-        "format_version": 3 if kind == "composition" else 2,
+        "format_version": 4 if kind == "composition" else 2,
         "exported_at": datetime.now(UTC).isoformat(),
     }
 
@@ -128,7 +129,7 @@ def composition_manifest(connection, identifier):
             .where(generations.c.variant_id == frame["id"])
             .order_by(generations.c.id)
         ).mappings():
-            generation = serial(row)
+            generation = generation_record(connection, row)
             runs.setdefault(row["run_id"], []).append(generation)
             hashes.update(row["outputs"])
             for ref in row["references"]:

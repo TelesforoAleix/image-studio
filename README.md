@@ -438,7 +438,7 @@ or rewriting image bytes. Import and permanent deletion are not available.
 
 Both portable package kinds contain one UTF-8 `manifest.json`. Its top-level
 `format` is `image-studio-asset` or `image-studio-composition`, `format_version`
-is `2` for assets and `3` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
+is `2` for assets and `4` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
 list of file records: `hash`, `media_type`, `size` (bytes), `width`, `height`,
 `stored_at`, and `filename`. Each file is the exact stored bytes at
 `files/<sha256>.<ext>`; extensions are `png`, `jpg` and `webp`. The SHA-256 of its
@@ -591,7 +591,7 @@ columns and restores R1 rows. CI proves a fresh upgrade and R1 upgrade twice,
 downgrade and re-upgrade with `character`, `lamp` and an unknown label.
 
 Asset package **version 2** adds `type`, label and `preserve` plus Originals,
-References and generated lineage. Composition package **version 3** adds these
+References and generated lineage. Composition package **version 4** adds these
 asset fields, project/composition `style_asset_id`, effective `style`, style
 selections, pack/frame `selected_originals` and new reference metadata. Historical
 style inputs remain in run snapshots and `referenced_assets` after style deletion.
@@ -679,3 +679,41 @@ Advanced isolation, costs/monthly sum, refusals, local edit and reuse proofs.
 `check_model_requests_migration.py` proves R2 upgrade twice, unchanged past
 rows and downgrade; fresh database upgrades run twice in Postgres tests.
 Earlier journeys and the dump restore continue in the compose job.
+
+
+## Feedback on every output
+
+History and large output pages offer **Good** and **Not good** under each output.
+Click once to set a verdict; click the selected button again to clear it. Feedback
+belongs to the generation and its output index, independently of **Final**.
+**Provide feedback** opens an inline form with an optional verdict, one optional
+**Kept**, **Partly** or **Lost** rating per asset in the generation's saved
+references (including the style), and an optional note. **Save feedback** saves
+explicitly; Cancel discards form edits. History shows each model's rated output
+count and good count for the selected frame, including retries. Nothing is scored.
+
+`PATCH /api/generations/<id>/outputs/<index>/feedback` accepts any nonempty subset
+of `verdict` (`good`, `not_good` or `null`), `asset_ratings` (a list of
+`{asset_id, rating}`) and `note` (text). Omitted fields remain unchanged; an empty
+ratings list or empty note clears that detail. Only unique assets from the saved
+reference snapshot can be rated, even after library edits or deletion. Responses
+include `updated_at`. Generation and History reads include `feedback`, aligned
+with `outputs`; untouched outputs have null verdict/time, empty ratings and note.
+`GET /api/variants/<id>/feedback-tally` returns `{model: {rated, good}}`.
+Large output pages are `#output/<generation-id>/<output-index>`; generated asset
+image lineage includes its output index to link to the same page.
+
+Alembic 0009 adds only `output_feedback`, keyed by generation and output index.
+Clearing feedback retains its row; no records or stored files are deleted or
+rewritten. Downgrade removes the feedback table and restores R3; production
+rollback uses a revert PR and restart to retain owner feedback. Complete
+composition packages use **format_version 4** and include each generation's
+output-aligned feedback, alongside the full snapshots. Asset packages stay at
+version 2. Exports still stream without changing records or storage.
+
+CI's `check_feedback_migration.py` proves R3 runs survive upgrade twice and
+restores R3 on downgrade; fresh databases migrate twice in Postgres tests.
+`check_feedback.py` prints proof of two models with two outputs each, verdict
+changes and clearing, subject/style ratings and a note, refusal of an unreferenced
+asset, per-model tallies and version 4 packages with unchanged records/storage.
+Earlier placeholder journeys and dump restore run alongside it.

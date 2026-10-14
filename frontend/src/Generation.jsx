@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { ModelRequests } from "./ModelRequests";
+import { Feedback } from "./Feedback";
 import { ModelCost } from "./ModelCost";
 
 export function ModelPicker({
@@ -68,7 +69,7 @@ export function ModelPicker({
   );
 }
 
-export function History({ path, act, revision, refresh }) {
+export function History({ path, act, revision, refresh, busy }) {
   const [items, setItems] = useState([]);
   const previous = useRef("");
   const refreshRef = useRef(refresh);
@@ -108,14 +109,30 @@ export function History({ path, act, revision, refresh }) {
             <small>{new Date(g.created_at).toLocaleString()}</small>
             {g.error && <p>{g.error}</p>}
             {g.outputs.map((hash, i) => (
-              <a
-                key={`${hash}-${i}`}
-                href={`/api/files/${hash}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img src={`/api/files/${hash}`} alt={`Output ${i + 1}`} />
-              </a>
+              <div key={`${g.id}-${i}`}>
+                <a href={`#output/${g.id}/${i}`}>
+                  <img src={`/api/files/${hash}`} alt={`Output ${i + 1}`} />
+                </a>
+                <Feedback
+                  generation={g}
+                  output={i}
+                  {...{ act, busy }}
+                  saved={(feedback) =>
+                    setItems((old) =>
+                      old.map((row) =>
+                        row.id === g.id
+                          ? {
+                              ...row,
+                              feedback: row.feedback.map((f, index) =>
+                                index === i ? feedback : f,
+                              ),
+                            }
+                          : row,
+                      ),
+                    )
+                  }
+                />
+              </div>
             ))}
             <details>
               <summary>Input snapshot</summary>
@@ -215,7 +232,7 @@ export function ReferenceGeneration({ id, act, busy, refresh, inputRevision }) {
       </form>
       <History
         path={`/assets/${id}/generations`}
-        {...{ act, revision, refresh }}
+        {...{ act, revision, refresh, busy }}
       />
     </div>
   );

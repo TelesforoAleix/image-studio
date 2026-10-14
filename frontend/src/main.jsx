@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { api } from "./api";
+import { OutputPage } from "./Feedback";
 import { Storage } from "./Storage";
 import { Library } from "./Library";
 import { AssetPage } from "./AssetPage";
@@ -66,6 +67,7 @@ function App() {
   }, [route]);
   const assetFilter =
     new URLSearchParams(route.split("?")[1] || "").get("used_by_project") || "";
+  const outputMatch = /^output\/(\d+)\/(\d+)$/.exec(route);
   const assetMatch = /^asset\/(\d+)$/.exec(route);
   return (
     <main>
@@ -125,7 +127,14 @@ function App() {
           Working…
         </p>
       )}
-      {route === "storage" ? (
+      {outputMatch ? (
+        <OutputPage
+          key={route}
+          id={outputMatch[1]}
+          output={Number(outputMatch[2])}
+          {...{ act, busy }}
+        />
+      ) : route === "storage" ? (
         <Storage act={act} busy={busy} />
       ) : route === "projects" ? (
         <section>
