@@ -16,10 +16,10 @@ def render(content, references, info):
         return content, refs
     numbers = {old: new for new, (old, _) in enumerate(indexed, 1)}
     content = re.sub(
-        r"\(reference images ([0-9, ]+)\)",
+        r"\(reference images ([0-9]+(?:, ?[0-9]+)*)\)",
         lambda m: (
             "(reference images "
-            + ", ".join(str(numbers.get(int(n), int(n))) for n in m[1].split(", "))
+            + ", ".join(str(numbers.get(int(n), int(n))) for n in m[1].split(","))
             + ")"
         ),
         content,

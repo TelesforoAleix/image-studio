@@ -112,10 +112,21 @@ export function ModelRequests({
             setChoices(
               choices.map((c) => ({
                 ...c,
-                settings: defaults(
-                  models.find((m) => m.model_name === c.model).model_info,
-                  e.target.value,
-                ),
+                settings: (() => {
+                  const info = models.find(
+                    (m) => m.model_name === c.model,
+                  )?.model_info;
+                  if (!info) return c.settings;
+                  const next = defaults(info, e.target.value);
+                  return {
+                    ...next,
+                    advanced: c.settings?.advanced || next.advanced,
+                    quality:
+                      c.settings?.quality in prices(info, e.target.value)
+                        ? c.settings.quality
+                        : next.quality,
+                  };
+                })(),
               })),
             );
           }}
