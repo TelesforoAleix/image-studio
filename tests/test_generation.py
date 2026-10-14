@@ -48,7 +48,7 @@ def test_prompt_order_empty_parts_and_reference_views():
         {"instructions": "Variant"},
     )
     assert preview["prompt"] == (
-        "Project\n\nScene\n\nSubject: Synthetic — Description "
+        "Project\n\nScene\n\nSubject: Synthetic (Other) — Description "
         "(reference images 1, 2)\n\nVariant"
     )
     assert [r["hash"] for r in preview["references"]] == ["1", "3"]

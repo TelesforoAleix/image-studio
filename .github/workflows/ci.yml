@@ -95,6 +95,7 @@ jobs:
           docker compose build
           docker compose up -d postgres --wait --wait-timeout 120
           docker compose run --rm -T --no-deps app python - < scripts/check_structure_migration.py
+          docker compose run --rm -T --no-deps app python - < scripts/check_richer_migration.py
           docker compose up -d --wait --wait-timeout 120
       - name: Fetch page, health and unknown API route
         run: |
@@ -139,6 +140,8 @@ jobs:
         run: uv run python scripts/check_portability.py
       - name: Prove Assets, Compositions and Projects structure
         run: uv run python scripts/check_structure.py
+      - name: Prove richer assets, preservation, styles, originals and lineage
+        run: uv run python scripts/check_richer_assets.py
       - name: Prove database dump restores with matching tables and row counts
         run: |
           # Freeze periodic job writes while comparing the dump's exact row counts.

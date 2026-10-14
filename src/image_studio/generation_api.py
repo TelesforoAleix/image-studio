@@ -8,7 +8,7 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
 
-from image_studio.api import get_row, images_for, serial, transaction
+from image_studio.api import get_row, images_for, serial, transaction, validate_style
 from image_studio.image_client import prepare_reference
 from image_studio.jobs import defer
 from image_studio.prompting import assemble, reference_view
@@ -65,8 +65,23 @@ def selected_assets(connection, comp):
         .order_by(composition_assets.c.position, composition_assets.c.id)
     ).mappings()
     result = []
+    style = effective_style(connection, comp)
+    if style:
+        result.append(
+            (
+                style,
+                {
+                    "role": "style reference",
+                    "style": True,
+                    "deselected_images": comp["style_deselected_images"],
+                },
+                images_for(connection, style["id"]),
+            )
+        )
     for selection in rows:
         asset = get_row(connection, assets, selection["asset_id"])
+        if asset["type"] == "style":
+            raise BadRequest("A Style asset cannot be a pack subject")
         result.append((asset, selection, images_for(connection, asset["id"])))
     return result
 
@@ -122,6 +137,12 @@ def variant_preview(connection, identifier):
 def detail(connection, identifier):
     comp = composition(connection, identifier)
     result = serial(comp)
+    style = effective_style(connection, comp)
+    result["style"] = (
+        {**serial(style), "images": images_for(connection, style["id"])}
+        if style
+        else None
+    )
     # Keep stale selections visible so the user can remove them after asset changes.
     result["assets"] = []
     for selection in connection.execute(
@@ -188,7 +209,28 @@ def composition_project(connection, comp):
     )
 
 
+def effective_style(connection, comp):
+    project = composition_project(connection, comp)
+    identifier = comp["style_asset_id"] or (
+        project["style_asset_id"] if project else None
+    )
+    if identifier is None:
+        return None
+    asset = get_row(connection, assets, identifier, deleted=True)
+    return asset if asset["deleted_at"] is None and asset["type"] == "style" else None
+
+
+def image_ids(value, available, field):
+    if (
+        not isinstance(value, list)
+        or any(type(i) is not int or i not in available for i in value)
+        or len(value) != len(set(value))
+    ):
+        raise BadRequest(f"{field} must contain unique available image IDs")
+
+
 def composition_fields(connection, value):
+    validate_style(connection, value)
     text_fields(value, ["name", "scene", "direction"])
     if "kind" in value and value["kind"] not in ("single", "storyboard"):
         raise BadRequest("kind must be single or storyboard")
@@ -235,6 +277,15 @@ def summaries(connection, project_id=None, *, filtered=False):
 
 
 def new_composition(connection, value):
+    if "style_deselected_images" in value:
+        style = effective_style(
+            connection, {"style_asset_id": None, "project_id": None, **value}
+        )
+        image_ids(
+            value["style_deselected_images"],
+            {i["id"] for i in images_for(connection, style["id"])} if style else set(),
+            "style_deselected_images",
+        )
     identifier = connection.execute(
         insert(compositions).values(**value).returning(compositions.c.id)
     ).scalar_one()
@@ -249,7 +300,16 @@ def all_compositions(connection):
         value = composition_fields(
             connection,
             body(
-                ["name", "scene", "direction", "kind", "project_id"], ["name", "kind"]
+                [
+                    "name",
+                    "scene",
+                    "direction",
+                    "kind",
+                    "project_id",
+                    "style_asset_id",
+                    "style_deselected_images",
+                ],
+                ["name", "kind"],
             ),
         )
         return new_composition(connection, value)
@@ -277,7 +337,8 @@ def project_compositions(connection, project_id):
     if request.method == "GET":
         return jsonify(summaries(connection, project_id, filtered=True))
     value = composition_fields(
-        connection, body(["name", "scene", "direction", "kind"], ["name"])
+        connection,
+        body(["name", "scene", "direction", "kind", "style_asset_id"], ["name"]),
     )
     return new_composition(connection, {**value, "project_id": project_id})
 
@@ -287,7 +348,16 @@ def project_compositions(connection, project_id):
 def duplicate_composition(connection, identifier):
     original = lock_composition(connection, identifier)
     values = {
-        k: original[k] for k in ("name", "project_id", "kind", "direction", "scene")
+        k: original[k]
+        for k in (
+            "name",
+            "project_id",
+            "kind",
+            "direction",
+            "scene",
+            "style_asset_id",
+            "style_deselected_images",
+        )
     }
     values["name"] += " (copy)"
     copied = connection.execute(
@@ -308,6 +378,7 @@ def duplicate_composition(connection, identifier):
                         "role",
                         "position",
                         "deselected_images",
+                        "selected_originals",
                         "active",
                     )
                 },
@@ -319,7 +390,13 @@ def duplicate_composition(connection, identifier):
                 composition_id=copied,
                 **{
                     k: frame[k]
-                    for k in ("name", "instructions", "position", "deselected_images")
+                    for k in (
+                        "name",
+                        "instructions",
+                        "position",
+                        "deselected_images",
+                        "selected_originals",
+                    )
                 },
             )
         )
@@ -341,8 +418,29 @@ def edit_composition(connection, identifier):
         return jsonify(deleted=True)
     if request.method == "PATCH":
         value = composition_fields(
-            connection, body(["name", "scene", "direction", "kind", "project_id"])
+            connection,
+            body(
+                [
+                    "name",
+                    "scene",
+                    "direction",
+                    "kind",
+                    "project_id",
+                    "style_asset_id",
+                    "style_deselected_images",
+                ]
+            ),
         )
+        if "style_deselected_images" in value:
+            candidate = {**composition(connection, identifier), **value}
+            style = effective_style(connection, candidate)
+            image_ids(
+                value["style_deselected_images"],
+                {i["id"] for i in images_for(connection, style["id"])}
+                if style
+                else set(),
+                "style_deselected_images",
+            )
         if (
             value.get("kind") == "single"
             and len(live_frames(connection, identifier)) != 1
@@ -361,14 +459,25 @@ def edit_composition(connection, identifier):
 @transaction
 def select_asset(connection, identifier, asset_id):
     composition(connection, identifier)
-    get_row(connection, assets, asset_id)
-    value = text_fields(body(["role", "deselected_images"], ["role"]), ["role"])
+    asset = get_row(connection, assets, asset_id)
+    if asset["type"] == "style":
+        raise BadRequest("A Style asset cannot be a pack subject")
+    value = text_fields(
+        body(["role", "deselected_images", "selected_originals"], ["role"]), ["role"]
+    )
+    images = images_for(connection, asset_id)
+    image_ids(
+        value.get("selected_originals", []),
+        {i["id"] for i in images if i["source"] == "uploaded" and not i["rejected"]},
+        "selected_originals",
+    )
+    value.setdefault("selected_originals", [])
     if not value["role"].strip():
         raise BadRequest("role must not be empty")
     deselected = value.get("deselected_images", [])
-    image_ids = {i["id"] for i in images_for(connection, asset_id)}
+    available_ids = {i["id"] for i in images_for(connection, asset_id)}
     if not isinstance(deselected, list) or any(
-        type(i) is not int or i not in image_ids for i in deselected
+        type(i) is not int or i not in available_ids for i in deselected
     ):
         raise BadRequest(
             "deselected_images must contain image IDs belonging to the asset"
@@ -475,28 +584,32 @@ def edit_variant(connection, identifier):
         )
         return jsonify(deleted=True)
     value = text_fields(
-        body(["name", "instructions", "deselected_images"]), ["name", "instructions"]
+        body(["name", "instructions", "deselected_images", "selected_originals"]),
+        ["name", "instructions"],
     )
-    if "deselected_images" in value:
-        ids = value["deselected_images"]
+    if {"deselected_images", "selected_originals"} & value.keys():
+        selections = selected_assets(
+            connection, composition(connection, variant["composition_id"])
+        )
         available = {
             image["id"]
-            for _, selection, images in selected_assets(
-                connection, composition(connection, variant["composition_id"])
-            )
+            for _, selection, images in selections
             for image in images
-            if image["approved"]
-            and not image["rejected"]
+            if not image["rejected"]
             and image["id"] not in selection["deselected_images"]
+            and (image["approved"] or image["source"] == "uploaded")
         }
-        if (
-            not isinstance(ids, list)
-            or any(type(i) is not int or i not in available for i in ids)
-            or len(ids) != len(set(ids))
-        ):
-            raise BadRequest(
-                "deselected_images must contain unique selected pack image IDs"
-            )
+        if "deselected_images" in value:
+            image_ids(value["deselected_images"], available, "deselected_images")
+        if "selected_originals" in value:
+            originals = {
+                i["id"]
+                for _, selection, images in selections
+                if not selection.get("style")
+                for i in images
+                if i["source"] == "uploaded" and not i["rejected"]
+            }
+            image_ids(value["selected_originals"], originals, "selected_originals")
     if value:
         connection.execute(
             update(variants).where(variants.c.id == identifier).values(**value)
@@ -740,6 +853,8 @@ def draft_references(connection, supplied):
                 "asset_name": row["name"],
                 "description": row["description"],
                 "type_tag": row["type_tag"],
+                "type": row["type"],
+                "preserve": row["preserve"],
                 "role": ref["role"],
             }
         )

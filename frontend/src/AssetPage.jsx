@@ -46,36 +46,6 @@ export function AssetPage({ id, projects, act, changed, busy }) {
         <button disabled={busy}>Save asset</button>
       </form>
       <div className="panel">
-        <h3>Reference images</h3>
-        <p>
-          Approve images to make them canonical references. Unapproved images
-          remain attached.
-        </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget;
-            const body = new FormData(form);
-            act(async () => {
-              setAsset(await api(`/assets/${id}/images`, "POST", body));
-              form.reset();
-              changed("Images uploaded.");
-            });
-          }}
-        >
-          <label>
-            Upload images
-            <input
-              type="file"
-              name="files"
-              multiple
-              required
-              accept="image/jpeg,image/png,image/webp"
-            />
-          </label>
-          <p>JPEG, PNG or WebP. Up to 25 MB per file and 90 MB per request.</p>
-          <button disabled={busy}>Upload selected images</button>
-        </form>
         <label>
           <input
             type="checkbox"
@@ -95,89 +65,165 @@ export function AssetPage({ id, projects, act, changed, busy }) {
           />
           Show rejected candidates
         </label>
-        {asset.images.length ? (
-          <div className="image-grid">
-            {asset.images.map((image) => (
-              <article
-                className={`image-card ${image.approved ? "canonical" : ""}`}
-                key={image.id}
+        {[
+          ["References", asset.references],
+          ["Originals", asset.originals],
+          [
+            "Candidates waiting for review",
+            asset.images.filter((i) => i.source === "generated" && !i.approved),
+          ],
+        ].map(([title, images]) => (
+          <section key={title}>
+            <h3>{title}</h3>
+            {title === "Originals" && (
+              <p>
+                Uploads are sent only when ticked. Approve one to use it as a
+                reference by default.
+              </p>
+            )}
+            {title === "Originals" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget;
+                  const body = new FormData(form);
+                  act(async () => {
+                    setAsset(await api(`/assets/${id}/images`, "POST", body));
+                    form.reset();
+                    changed("Images uploaded.");
+                  });
+                }}
               >
-                <a
-                  href={`/api/files/${image.hash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <img
-                    src={`/api/files/${image.hash}`}
-                    alt={`Reference ${image.id} for ${asset.name}`}
-                    loading="lazy"
+                <label>
+                  Upload images
+                  <input
+                    type="file"
+                    name="files"
+                    multiple
+                    required
+                    accept="image/jpeg,image/png,image/webp"
                   />
-                </a>
-                <div className="image-info">
-                  <strong>
-                    {image.rejected
-                      ? "Rejected"
-                      : image.approved
-                        ? "Canonical reference"
-                        : "Not approved"}
-                  </strong>
-                  <small>
-                    {image.width} × {image.height} · {image.source}
-                  </small>
-                  <button
-                    disabled={busy}
-                    type="button"
-                    onClick={() =>
-                      act(async () => {
-                        setAsset(
-                          await api(
-                            `/assets/${id}/images/${image.id}`,
-                            "PATCH",
-                            { approved: !image.approved },
-                          ),
-                        );
-                        changed(
-                          image.approved
-                            ? "Reference unapproved."
-                            : "Reference approved.",
-                        );
-                      })
-                    }
+                </label>
+                <p>
+                  JPEG, PNG or WebP. Up to 25 MB per file and 90 MB per request.
+                </p>
+                <button disabled={busy}>Upload selected images</button>
+              </form>
+            )}
+            {images.length ? (
+              <div className="image-grid">
+                {images.map((image) => (
+                  <article
+                    className={`image-card ${image.approved ? "canonical" : ""}`}
+                    key={image.id}
                   >
-                    {image.approved ? "Unapprove" : "Approve"}
-                  </button>
-                  {image.source === "generated" && !image.rejected && (
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        act(async () => {
-                          setAsset(
-                            await api(
-                              `/assets/${id}/images/${image.id}?include_rejected=${showRejected}`,
-                              "PATCH",
-                              { rejected: true },
-                            ),
-                          );
-                          changed("Candidate rejected.");
-                        })
-                      }
+                    <a
+                      href={`/api/files/${image.hash}`}
+                      target="_blank"
+                      rel="noreferrer"
                     >
-                      Reject
-                    </button>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="empty-note">No reference images yet.</p>
-        )}
+                      <img
+                        src={`/api/files/${image.hash}`}
+                        alt={`Reference ${image.id} for ${asset.name}`}
+                        loading="lazy"
+                      />
+                    </a>
+                    <div className="image-info">
+                      <strong>
+                        {image.rejected
+                          ? "Rejected"
+                          : image.approved
+                            ? "Reference"
+                            : "Not approved"}
+                      </strong>
+                      <small>
+                        {image.width} × {image.height} · {image.source}
+                      </small>
+                      {image.lineage && (
+                        <div className="lineage">
+                          <small>
+                            From originals · generation{" "}
+                            {image.lineage.generation_id}
+                          </small>
+                          {image.lineage.originals.map((ref, index) => (
+                            <a
+                              key={index}
+                              href={`/api/files/${ref.hash}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <img
+                                src={`/api/files/${ref.hash}`}
+                                alt={`Original ${index + 1}`}
+                                loading="lazy"
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        disabled={busy}
+                        type="button"
+                        onClick={() =>
+                          act(async () => {
+                            setAsset(
+                              await api(
+                                `/assets/${id}/images/${image.id}`,
+                                "PATCH",
+                                { approved: !image.approved },
+                              ),
+                            );
+                            changed(
+                              image.approved
+                                ? "Reference unapproved."
+                                : "Reference approved.",
+                            );
+                          })
+                        }
+                      >
+                        {image.approved ? "Unapprove" : "Approve"}
+                      </button>
+                      {image.source === "generated" && !image.rejected && (
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            act(async () => {
+                              setAsset(
+                                await api(
+                                  `/assets/${id}/images/${image.id}?include_rejected=${showRejected}`,
+                                  "PATCH",
+                                  { rejected: true },
+                                ),
+                              );
+                              changed("Candidate rejected.");
+                            })
+                          }
+                        >
+                          Reject
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-note">No images in this list yet.</p>
+            )}
+          </section>
+        ))}
       </div>
       <ReferenceGeneration
-        inputRevision={asset.images
-          .filter((i) => i.source === "uploaded")
-          .map((i) => i.hash)
-          .join(",")}
+        inputRevision={[
+          asset.name,
+          asset.type_tag,
+          asset.type,
+          asset.description,
+          asset.preserve,
+          asset.images
+            .filter((i) => i.source === "uploaded")
+            .map((i) => i.hash)
+            .join(","),
+        ].join("|")}
         id={id}
         act={act}
         busy={busy}

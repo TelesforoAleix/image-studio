@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
-import { AssetFields, blankAsset } from "./AssetFields";
+import { AssetFields, blankAsset, assetTypes } from "./AssetFields";
 export function Library({ projects, act, revision, busy, projectFilter = "" }) {
   const [assets, setAssets] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -13,7 +13,7 @@ export function Library({ projects, act, revision, busy, projectFilter = "" }) {
     let active = true;
     setLoaded(false);
     const query = new URLSearchParams();
-    if (tag) query.set("type_tag", tag);
+    if (tag) query.set("type", tag);
     if (project) query.set("used_by_project", project);
     act(async () => {
       const result = await api(`/assets?${query}`);
@@ -36,12 +36,15 @@ export function Library({ projects, act, revision, busy, projectFilter = "" }) {
       </div>
       <div className="filters">
         <label>
-          Type tag
-          <input
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            placeholder="All types"
-          />
+          Type
+          <select value={tag} onChange={(e) => setTag(e.target.value)}>
+            <option value="">All types</option>
+            {Object.entries(assetTypes).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Project view
@@ -87,7 +90,10 @@ export function Library({ projects, act, revision, busy, projectFilter = "" }) {
                 href={`#asset/${asset.id}`}
               >
                 <h3>{asset.name}</h3>
-                <span className="badge">{asset.type_tag || "No type tag"}</span>
+                <span className="badge">
+                  {assetTypes[asset.type]}
+                  {asset.type_tag ? ` · ${asset.type_tag}` : ""}
+                </span>
                 <p>
                   {asset.description || "Add a description and references."}
                 </p>

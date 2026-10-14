@@ -28,6 +28,7 @@ projects = Table(
     Column("id", Integer, Identity(), primary_key=True),
     Column("name", Text, nullable=False),
     Column("instructions", Text, nullable=False, server_default=""),
+    Column("style_asset_id", ForeignKey("assets.id")),
     Column(
         "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
     ),
@@ -38,6 +39,8 @@ assets = Table(
     Column("id", Integer, Identity(), primary_key=True),
     Column("name", Text, nullable=False),
     Column("type_tag", Text),
+    Column("type", Text, nullable=False, server_default="other"),
+    Column("preserve", Text, nullable=False, server_default=""),
     Column("description", Text, nullable=False, server_default=""),
     Column(
         "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -83,6 +86,8 @@ compositions = Table(
     Column("name", Text, nullable=False),
     Column("scene", Text, nullable=False, server_default=""),
     Column("direction", Text, nullable=False, server_default=""),
+    Column("style_asset_id", ForeignKey("assets.id")),
+    Column("style_deselected_images", JSONB, nullable=False, server_default="[]"),
     Column("kind", Text, nullable=False, server_default="single"),
     CheckConstraint("kind IN ('single', 'storyboard')", name="composition_kind"),
     Column(
@@ -99,6 +104,7 @@ composition_assets = Table(
     Column("role", Text, nullable=False),
     Column("position", Integer, nullable=False),
     Column("deselected_images", JSONB, nullable=False, server_default="[]"),
+    Column("selected_originals", JSONB, nullable=False, server_default="[]"),
     Column("active", Boolean, nullable=False, server_default=text("true")),
     UniqueConstraint("composition_id", "asset_id", name="one_asset_per_composition"),
 )
@@ -123,6 +129,7 @@ variants = Table(
     Column("position", Integer, nullable=False, server_default="0"),
     Column("deleted_at", DateTime(timezone=True)),
     Column("deselected_images", JSONB, nullable=False, server_default="[]"),
+    Column("selected_originals", JSONB, nullable=False, server_default="[]"),
 )
 generations = Table(
     "generations",
