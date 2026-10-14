@@ -2,7 +2,11 @@
 
 
 def assemble(project, composition, selections, variant):
-    parts = [project["instructions"], composition["scene"]]
+    parts = [
+        project["instructions"] if project else "",
+        composition.get("direction", ""),
+        composition["scene"],
+    ]
     references = []
     for asset, selection, images in selections:
         numbers = []

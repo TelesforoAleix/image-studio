@@ -58,7 +58,7 @@ def setup_composition(c):
     ).json
     comp = c.post(
         f"/api/projects/{project['id']}/compositions",
-        json={"name": "Synthetic scene", "scene": "Scene"},
+        json={"name": "Synthetic scene", "scene": "Scene", "kind": "storyboard"},
     ).json
     asset = new_asset(c, description="Description")
     asset = upload(
@@ -258,7 +258,7 @@ def test_queue_validation_creates_no_row(generation_client, body):
         assert connection.scalar(text("SELECT count(*) FROM procrastinate_jobs")) == 0
 
 
-def test_reference_limit_and_visibility(generation_client):
+def test_reference_limit_and_pack_validation(generation_client):
     c, engine, _ = generation_client
     _, comp, asset = setup_composition(c)
     for i in range(5):
@@ -275,15 +275,6 @@ def test_reference_limit_and_visibility(generation_client):
         refusal.status_code == 400
         and "7 references" in refusal.json["error"]
         and "4" in refusal.json["error"]
-    )
-    other = c.post("/api/projects", json={"name": "Other"}).json
-    private = new_asset(c, project_id=other["id"])
-    assert (
-        c.put(
-            f"/api/compositions/{comp['id']}/assets/{private['id']}",
-            json={"role": "Subject"},
-        ).status_code
-        == 400
     )
     assert (
         c.put(

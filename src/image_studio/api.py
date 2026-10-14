@@ -5,12 +5,19 @@ from datetime import datetime
 from functools import wraps
 
 from flask import Blueprint, current_app, jsonify, request, send_file
-from sqlalchemy import insert, or_, select, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, NotFound, ServiceUnavailable
 
 from image_studio.files import decode_upload, publish_file
-from image_studio.schema import asset_images, assets, projects, stored_files
+from image_studio.schema import (
+    asset_images,
+    assets,
+    composition_assets,
+    compositions,
+    projects,
+    stored_files,
+)
 
 api = Blueprint("studio", __name__, url_prefix="/api")
 
@@ -75,22 +82,13 @@ def payload(connection, *, asset=False, creating=False):
     body = request.get_json()
     if not isinstance(body, dict):
         raise BadRequest("Expected a JSON object")
-    allowed = (
-        {"name", "type_tag", "description", "project_id"}
-        if asset
-        else {"name", "instructions"}
-    )
+    allowed = {"name", "type_tag", "description"} if asset else {"name", "instructions"}
     if body.keys() - allowed:
         raise BadRequest("Unknown fields: " + ", ".join(sorted(body.keys() - allowed)))
     if creating and "name" not in body:
         raise BadRequest("name is required")
     for key, value in list(body.items()):
-        if key == "project_id":
-            if value is not None:
-                if type(value) is not int or not 1 <= value <= 2147483647:
-                    raise BadRequest("project_id must be a positive integer or null")
-                get_row(connection, projects, value)
-        elif key == "type_tag" and value is None:
+        if key == "type_tag" and value is None:
             continue
         elif not isinstance(value, str):
             raise BadRequest(f"{key} must be text")
@@ -157,21 +155,27 @@ def list_assets(connection):
         query = query.where(assets.c.deleted_at.is_(None))
     if "type_tag" in request.args:
         query = query.where(assets.c.type_tag == request.args["type_tag"])
-    if "project_id" in request.args:
-        project = request.args["project_id"]
-        if project == "global":
-            query = query.where(assets.c.project_id.is_(None))
-        else:
-            if (
-                not project.isascii()
-                or not project.isdecimal()
-                or not 1 <= int(project) <= 2147483647
-            ):
-                raise BadRequest("project_id must be a positive integer or global")
-            get_row(connection, projects, int(project))
-            query = query.where(
-                or_(assets.c.project_id.is_(None), assets.c.project_id == int(project))
+    if "used_by_project" in request.args:
+        project = request.args["used_by_project"]
+        if (
+            not project.isascii()
+            or not project.isdecimal()
+            or not 1 <= int(project) <= 2147483647
+        ):
+            raise BadRequest("used_by_project must be a positive integer")
+        get_row(connection, projects, int(project))
+        used = (
+            select(composition_assets.c.asset_id)
+            .join(compositions)
+            .where(
+                compositions.c.project_id == int(project),
+                compositions.c.deleted_at.is_(None),
+                composition_assets.c.active.is_(True),
             )
+        )
+        query = query.where(assets.c.id.in_(used))
+    if "project_id" in request.args:
+        raise BadRequest("Assets are global; use used_by_project to filter by usage")
     return jsonify([serial(row) for row in connection.execute(query).mappings()])
 
 
@@ -220,9 +224,7 @@ def delete_asset(connection, identifier):
 @transaction
 def duplicate_asset(connection, identifier):
     original = get_row(connection, assets, identifier)
-    values = {
-        key: original[key] for key in ("name", "type_tag", "description", "project_id")
-    }
+    values = {key: original[key] for key in ("name", "type_tag", "description")}
     values["name"] += " (copy)"
     new_id = connection.execute(
         insert(assets).values(**values).returning(assets.c.id)

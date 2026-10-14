@@ -15,7 +15,7 @@ def main():
         request(
             "/api/assets",
             "POST",
-            {"name": f"Synthetic comparison {i}", "project_id": project["id"]},
+            {"name": f"Synthetic comparison {i}"},
             status=201,
         )
         for i in range(2)

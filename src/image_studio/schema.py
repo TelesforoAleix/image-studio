@@ -39,7 +39,6 @@ assets = Table(
     Column("name", Text, nullable=False),
     Column("type_tag", Text),
     Column("description", Text, nullable=False, server_default=""),
-    Column("project_id", ForeignKey("projects.id"), index=True),
     Column(
         "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
     ),
@@ -80,9 +79,12 @@ compositions = Table(
     "compositions",
     metadata,
     Column("id", Integer, Identity(), primary_key=True),
-    Column("project_id", ForeignKey("projects.id"), nullable=False, index=True),
+    Column("project_id", ForeignKey("projects.id"), index=True),
     Column("name", Text, nullable=False),
     Column("scene", Text, nullable=False, server_default=""),
+    Column("direction", Text, nullable=False, server_default=""),
+    Column("kind", Text, nullable=False, server_default="single"),
+    CheckConstraint("kind IN ('single', 'storyboard')", name="composition_kind"),
     Column(
         "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
     ),

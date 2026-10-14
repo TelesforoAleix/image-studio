@@ -90,8 +90,12 @@ jobs:
           PYCODE
       - name: Create external client network
         run: docker network create homelab-models
-      - name: Build and start stack
-        run: docker compose up -d --build --wait --wait-timeout 120
+      - name: Build stack and prove S8 migration twice with retained rows
+        run: |
+          docker compose build
+          docker compose up -d postgres --wait --wait-timeout 120
+          docker compose run --rm -T --no-deps app python - < scripts/check_structure_migration.py
+          docker compose up -d --wait --wait-timeout 120
       - name: Fetch page, health and unknown API route
         run: |
           python - <<'PYCODE'
@@ -133,6 +137,8 @@ jobs:
         run: uv run python scripts/check_storyboard.py
       - name: Prove portability, retained asset history and storage figures
         run: uv run python scripts/check_portability.py
+      - name: Prove Assets, Compositions and Projects structure
+        run: uv run python scripts/check_structure.py
       - name: Prove database dump restores with matching tables and row counts
         run: |
           # Freeze periodic job writes while comparing the dump's exact row counts.

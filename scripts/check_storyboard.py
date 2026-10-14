@@ -67,7 +67,7 @@ def main():
         request(
             "/api/assets",
             "POST",
-            {"name": f"Synthetic story asset {i}", "project_id": project["id"]},
+            {"name": f"Synthetic story asset {i}"},
             status=201,
         )
         for i in range(2)
@@ -79,7 +79,11 @@ def main():
     comp = request(
         f"/api/projects/{project['id']}/compositions",
         "POST",
-        {"name": "Synthetic storyboard", "scene": "Synthetic scene"},
+        {
+            "name": "Synthetic storyboard",
+            "scene": "Synthetic scene",
+            "kind": "storyboard",
+        },
         status=201,
     )
     path = f"/api/compositions/{comp['id']}"

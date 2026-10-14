@@ -426,3 +426,87 @@ fieldset {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.composition-row {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 16px;
+  margin: 12px 0;
+  background: white;
+  border: 1px solid #dce1d8;
+  border-radius: 10px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.composition-row img,
+.thumbnail-empty {
+  width: 90px;
+  height: 72px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.thumbnail-empty {
+  display: grid;
+  place-items: center;
+  color: #69716b;
+  background: #f7f8f5;
+  font-size: 12px;
+}
+.composition-header {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.composition-header label {
+  min-width: 160px;
+}
+.composition-tabs {
+  margin-top: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid #dce1d8;
+}
+.frame-strip {
+  display: flex;
+  overflow-x: auto;
+  gap: 16px;
+  padding: 8px 0 20px;
+}
+.frame-card {
+  flex: 0 0 200px;
+  padding: 12px;
+  border: 1px solid #dce1d8;
+  border-radius: 8px;
+}
+.frame-card a {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.frame-card a[aria-current="page"] {
+  font-weight: 700;
+  outline: 2px solid #809a61;
+}
+.frame-card img {
+  width: 100%;
+  height: 100px;
+  object-fit: contain;
+}
+.frame-card .actions {
+  gap: 8px;
+  margin-top: 12px;
+}
+.frame-card button {
+  font-size: 12px;
+  padding: 7px;
+}
+.button-link {
+  border: 1px solid #40552e;
+  padding: 10px 16px;
+  border-radius: 7px;
+  text-decoration: none;
+}
+.secondary-link {
+  font-size: 12px;
+  color: #69716b;
+}

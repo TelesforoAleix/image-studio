@@ -1,12 +1,12 @@
 # image studio
 
 A personal web application for making visually consistent AI-generated images.
-Reusable assets combine into compositions inside projects, with ordered frames and retained generation history; a separate endpoint
+Global assets combine into stand-alone compositions or compositions inside projects, with ordered frames and retained generation history; a separate endpoint
 creates the images over HTTP. This repository holds code only; user work lives
 outside it.
 
 The app manages projects with shared creative instructions and a reusable asset
-library. Assets have descriptions, optional type tags, global or project visibility,
+library. All assets are global, with descriptions, optional type tags,
 and uploaded images that can be approved as canonical references. Duplicate assets
 share their files and approvals; deletion hides assets while preserving their rows
 and files. Compositions and asset reference views can queue image generations.
@@ -77,23 +77,47 @@ request, including multipart overhead, with JSON 413 errors. Pillow's decompress
 bomb protection is retained. Accepted bytes are stored unchanged under their SHA-256;
 repeated bytes share one stored file. File metadata lives in Postgres.
 
-The text and form interface uses `#library`, `#projects` and `#asset/<id>` routes.
+The top-level sections are **Assets**, **Compositions** and **Projects**; Storage
+is a secondary link. Routes are `#assets`, `#asset/<id>`, `#compositions`,
+`#composition/<id>/frame/<frame-id>/<setup|generate|history>`, `#projects`,
+`#project/<id>` and `#storage`. `#library` redirects to Assets; `#frame/<id>`
+redirects to that frame's composition Setup tab. Opening `#composition/<id>`
+selects its first live frame and Setup.
+
+A project is a folder with creative direction. Its page lists compact composition
+rows and links to `#assets?used_by_project=<id>` for assets used by its live
+compositions. The Compositions section lists every live composition with its kind,
+project (or “No project”), first ordered final image or latest output thumbnail,
+and last generation activity (creation time before any runs), filterable by project.
+New compositions choose single or storyboard and an optional project. Singles hold
+one live frame. Turn a single into a storyboard to add frames; a storyboard can
+return to single only with one live frame.
+
+The composition header holds name, kind, changeable project, export buttons,
+Duplicate and inline Delete. Storyboards also show ordered frames with final
+thumbnails, selection, add, reorder and inline deletion. One tab is shown at a time:
+Setup edits direction, scene, shared asset pack and selected frame instructions and
+reference toggles; Generate shows the assembled/editable prompt, model counts and
+trade-offs, pinned reuse draft and newly queued run; History shows that frame's runs,
+snapshots, finals, reuse and retry. Reuse opens Generate. Duplicate copies composition
+fields, retained pack selections and live frames without runs, generations or finals.
+
 The API uses JSON, except multipart uploads with one or more `files` fields:
 
 | Routes | Methods / behaviour |
 | --- | --- |
 | `/api/projects` | GET list, POST create (`name`, `instructions`) |
 | `/api/projects/<id>` | GET read, PATCH edit |
-| `/api/assets` | GET list, POST create (`name`, `type_tag`, `description`, `project_id`) |
+| `/api/assets` | GET list, POST create (`name`, `type_tag`, `description`) |
 | `/api/assets/<id>` | GET with images, PATCH edit, DELETE soft-delete |
-| `/api/assets/<id>/duplicate` | POST copy fields, visibility and image approvals |
+| `/api/assets/<id>/duplicate` | POST copy fields and image approvals |
 | `/api/assets/<id>/images` | POST multipart upload |
 | `/api/assets/<id>/images/<image-id>` | PATCH `{"approved": true}` or `false` |
 | `/api/files/<sha256>` | GET original bytes with stored media type and immutable caching |
 
-A null `project_id` means global visibility. List filtering accepts `type_tag` and
-`project_id` (a project ID includes global assets plus that project's assets;
-`global` shows only global assets). Assets are live by default; `include_deleted=true`
+Assets expose no visibility field or control. List filtering accepts `type_tag` and
+`used_by_project` (only assets actively used by that project's live compositions).
+Assets are live by default; `include_deleted=true`
 includes deleted assets in list and read responses. Deleted assets cannot be edited,
 duplicated or uploaded to, but their files remain fetchable. Unknown files return JSON
 404. The app has no login; keep its published port on loopback and use Cloudflare
@@ -201,11 +225,11 @@ unlock chain untouched.
 
 ## First generation
 
-Projects have compositions, each starting with a variant named **Frame 1**. Add visible
+Compositions optionally belong to projects, each starting with a variant named **Frame 1**. Add global
 assets with a role, toggle their approved reference images, and write scene and
-frame instructions. The fixed prompt preview combines project instructions, scene,
+frame instructions. The fixed prompt preview combines project instructions (when present), composition direction, scene,
 asset roles/names/descriptions with references numbered in request order, then frame
-instructions. Edit replaces the prompt for that generation; Reset restores assembly.
+instructions. Empty parts are omitted; past snapshots are never rewritten. Edit replaces the prompt for that generation; Reset restores assembly.
 Choose one to three image models, each with one to four outputs. One press of
 Generate creates a run with the same prompt and ordered references for every model.
 Results appear in model columns with paid and placeholder badges, licence and prices; failures keep
@@ -301,11 +325,13 @@ Additional API routes:
 | Routes | Methods / behaviour |
 | --- | --- |
 | `/api/models` | GET image models and endpoint-supplied capabilities |
-| `/api/projects/<id>/compositions` | GET list, POST create (`name`, `scene`) with Frame 1 |
-| `/api/compositions/<id>` | GET detail, PATCH name/scene, DELETE soft-delete |
+| `/api/compositions` | GET compact summaries; optional `project_id=<id>` or `none`; POST create (`name`, `kind`, optional `project_id`, `direction`, `scene`) with Frame 1 |
+| `/api/projects/<id>/compositions` | GET same summaries for project; POST create (`name`, optional `kind`, `direction`, `scene`) in project with Frame 1 (default single) |
+| `/api/compositions/<id>/duplicate` | POST copy fields, retained pack and live frames without history or finals |
+| `/api/compositions/<id>` | GET detail, PATCH name/scene/direction/kind/project_id, DELETE soft-delete |
 | `/api/compositions/<id>/assets/<asset-id>` | PUT role and `deselected_images` IDs; DELETE deactivates selection |
 | `/api/variants/<id>` | GET by ID (including hidden frames); PATCH name, instructions or frame deselections; DELETE soft-delete |
-| `/api/variants/<id>/preview` | GET saved preview; POST preview draft `scene` and `instructions` without saving |
+| `/api/variants/<id>/preview` | GET saved preview; POST preview draft optional `direction`, required `scene` and `instructions` without saving |
 | `/api/variants/<id>/generations` | GET history, POST queue (`model`, `count`, optional replacement `prompt`) |
 | `/api/assets/<id>/reference-preview` | GET fixed reference-view prompt and uploaded references |
 | `/api/assets/<id>/generations` | GET history, POST queue reference views |
@@ -339,8 +365,7 @@ labelled; remove any reference or append current pack images, edit the prompt an
 change models/counts before generating. Back to the current pack restores normal
 assembly. Drafts are not saved until Generate creates a new run. File metadata and
 asset descriptions are rebuilt on the server; draft hashes must belong to images
-of assets visible to the project, including deleted assets. Unknown, unattached or
-other-project files are refused. Each chosen model's licence, price and limit are shown before Generate
+of global assets, including deleted assets. Unknown and unattached files are refused. Each chosen model's licence, price and limit are shown before Generate
 and checked before any row/job is queued; one insufficient limit refuses the run.
 
 | Routes | Methods / behaviour |
@@ -359,19 +384,13 @@ tables and row counts, including these records.
 
 ## Storyboards
 
-A composition opens on its storyboard: live frames in order, with instructions,
-final images (or “No final yet”), and links to work on each frame. Add frame creates
-Frame N; rename it on its frame page. Move up / Move down changes the sequence.
-Deleting a frame asks inline and hides it with its runs and final. At least one live
-frame must remain. Its generations, final selection and immutable files are retained
-and remain readable by ID.
-
-The storyboard also edits the composition's single shared asset pack, roles and scene.
-Every frame uses that pack, with its own instructions and optional image deselections.
-The frame's reference switches only remove selected pack images for that frame;
-previews and new run snapshots use the remaining references. Shared edits affect later
-previews and runs for all frames. Retained snapshots and reused pinned drafts keep
-working as described above.
+A storyboard's ordered frame strip sits in the composition header. Add frame creates
+Frame N; rename it in Setup. Move up / Move down changes the sequence. Deletion asks
+inline and hides the frame with its runs and final. At least one live frame remains;
+generations, finals and immutable files remain readable by ID. Every frame uses one
+shared asset pack and scene, with its own instructions and optional reference
+deselections. Shared edits affect later previews and runs; past snapshots and reused
+pinned drafts stay intact.
 
 Export sequence names frames with no final before download and skips them. The server
 streams an image-only ZIP without writing an archive to storage. Final images use
@@ -414,7 +433,7 @@ or rewriting image bytes. Import and permanent deletion are not available.
 
 Both portable package kinds contain one UTF-8 `manifest.json`. Its top-level
 `format` is `image-studio-asset` or `image-studio-composition`, `format_version`
-is `1`, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
+is `1` for assets and `2` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
 list of file records: `hash`, `media_type`, `size` (bytes), `width`, `height`,
 `stored_at`, and `filename`. Each file is the exact stored bytes at
 `files/<sha256>.<ext>`; extensions are `png`, `jpg` and `webp`. The SHA-256 of its
@@ -424,7 +443,7 @@ ASCII slug rules as sequence exports. The images-only S6 ZIP keeps its ordered
 frame filenames and contains no manifest.
 
 The asset manifest adds `asset`: `id`, `name`, `type_tag`, `description`,
-`project_id` (null means global visibility), `created_at`, `deleted_at`, and
+`project_id` (always null; all assets are global), `created_at`, `deleted_at`, and
 `images`. Every attachment is listed, regardless of approval or rejection. Image
 records contain `id`, `asset_id`, `file_hash`, `approved`, `rejected`, `source`,
 `created_at` (attachment time), and the stored file metadata (`hash`, `media_type`,
@@ -432,8 +451,8 @@ records contain `id`, `asset_id`, `file_hash`, `approved`, `rejected`, `source`,
 
 The complete composition manifest adds:
 
-- `project`: `id`, `name`, `instructions`, `created_at`.
-- `composition`: `id`, `project_id`, `name`, `scene`, `created_at`, `deleted_at`.
+- `project`: null for stand-alone compositions, otherwise `id`, `name`, `instructions`, `created_at`.
+- `composition`: `id`, nullable `project_id`, `name`, `kind`, `direction`, `scene`, `created_at`, `deleted_at`.
 - `asset_pack`: retained selections in position/ID order, with `id`,
   `composition_id`, `asset_id`, `role`, `position`, `deselected_images`, `active`,
   and `asset`. Asset records have the same fields as the asset package but only
@@ -464,7 +483,7 @@ continue after the transaction closes. Packages contain application records and
 images only: no endpoint credentials, environment values, configuration or server
 paths are added.
 
-**Storage** in the main navigation shows the bytes and `file_count` in `stored_files`,
+**Storage** in the secondary navigation shows the bytes and `file_count` in `stored_files`,
 including deleted assets, hidden frames, rejected candidates and historical outputs.
 `/api/storage` returns `total`, `uploaded`, `generated`, `placeholder`, each with
 `bytes` and `file_count`. Shared hashes count once. For bytes that appear in several
@@ -478,3 +497,16 @@ CI's `scripts/check_portability.py` prints Journey E proof of canonical replacem
 byte-checkable packages, duplication, soft deletion, retained generation snapshots
 and files, complete frame/run contents, storage totals verified independently through
 SQL, and unchanged row counts. The following dump proof restores all these records.
+
+Alembic 0006 makes project assignment optional, adds empty direction and backfills
+kind from live frame count, and removes asset visibility (all attachments and files
+remain). Composition package version 2 adds `kind` and `direction` and permits
+`project: null`; asset packages keep version 1 and report `project_id: null`.
+Downgrading 0006 restores the S8 schema and rows with global asset visibility.
+It refuses if new stand-alone compositions or nonempty directions exist, rather
+than discarding new work S8 cannot represent; reconcile such work before downgrade.
+Rollback deploys a revert through a new PR and restarts the service. Migration
+upgrades preserve the owner's existing project, single composition, frame, runs and
+final unchanged. CI prints the S8 migration/downgrade retention proof and the
+stand-alone/move/kind/list/duplicate/export journey in `check_structure*.py`, then
+runs dump restore alongside the retained earlier journeys.
