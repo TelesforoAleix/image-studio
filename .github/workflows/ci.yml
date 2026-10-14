@@ -88,6 +88,8 @@ jobs:
           from pathlib import Path
           Path('.env').write_text('POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\nCOMPOSE_PROFILES=placeholder\nIMAGE_API_BASE_URL=http://placeholder:8300/v1\n')
           PYCODE
+      - name: Create external client network
+        run: docker network create homelab-models
       - name: Build and start stack
         run: docker compose up -d --build --wait --wait-timeout 120
       - name: Fetch page, health and unknown API route
@@ -123,6 +125,8 @@ jobs:
         run: uv run python scripts/check_stack.py
       - name: Prove first generation, snapshots, retries and persistence
         run: uv run python scripts/check_generation.py
+      - name: Prove both hosted shapes, resizing, budget, bounded retries and retired models
+        run: uv run python scripts/check_real_route.py
       - name: Prove compare and iterate with partial failure and pinned reuse
         run: uv run python scripts/check_compare.py
       - name: Prove storyboard sequence with shared references and retained frames

@@ -36,6 +36,8 @@ def main():
         "placeholder-a",
         "placeholder-b",
         "placeholder-fails",
+        "placeholder-chat",
+        "placeholder-budget",
     }
     assert all(m["model_info"]["placeholder"] for m in models)
     project = request(
@@ -177,8 +179,11 @@ def main():
         queue_path, "POST", {"model": "placeholder-fails", "count": 1}, status=201
     )
     failure = wait(failure["id"], "failed")
-    assert "500" in failure["error"] and "deliberately" in failure["error"]
-    print("PROOF deliberate model failure is failed with its error", flush=True)
+    assert "500" in failure["error"] and failure["attempts"] == 3
+    print(
+        "PROOF model HTTP 500 is failed after exactly three attempts with its status",
+        flush=True,
+    )
     subprocess.run(["docker", "compose", "stop", "placeholder"], check=True)
     try:
         offline = request(

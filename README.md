@@ -44,6 +44,8 @@ hex characters also keep the database URL safe from reserved URL characters.
 ```sh
 cp .env.example .env
 # Edit .env before starting.
+# Create once for local/CI use; the shared network already exists on the server.
+docker network create homelab-models
 docker compose up -d --build --wait --wait-timeout 120
 ```
 
@@ -125,7 +127,9 @@ the move. `.env.example` documents the variables:
 | `POSTGRES_PASSWORD` | Generated random hex password |
 | `STUDIO_FILES_PATH` | `/srv/homelab/image-studio-data/originals/files` |
 | `POSTGRES_DATA_PATH` | `/srv/homelab/image-studio-data/postgres` |
-| `COMPOSE_PROFILES` | `tunnel,placeholder` during trials |
+| `COMPOSE_PROFILES` | `tunnel` |
+| `IMAGE_API_BASE_URL` | `http://litellm:4000/v1` |
+| `IMAGE_API_KEY` | `unused` (the hosted route ignores it) |
 | `TUNNEL_TOKEN` | Owner-supplied tunnel token |
 
 Empty storage variables select the existing named volumes for local use and CI.
@@ -204,7 +208,7 @@ asset roles/names/descriptions with references numbered in request order, then f
 instructions. Edit replaces the prompt for that generation; Reset restores assembly.
 Choose one to three image models, each with one to four outputs. One press of
 Generate creates a run with the same prompt and ordered references for every model.
-Results appear in model columns with paid and placeholder badges; failures keep
+Results appear in model columns with paid and placeholder badges, licence and prices; failures keep
 their error beside successful outputs. Every result remains in history.
 On an asset page, Generate reference views uses its uploaded photos; generated
 candidates can be approved or rejected individually. Rejected candidates are hidden
@@ -212,7 +216,7 @@ by default, with a toggle to show them; their attachments and files remain store
 
 Generations preserve the prompt actually sent, assembled prompt, edit flag, model
 name and metadata, ordered reference hashes with asset descriptions and roles,
-output hashes, state, attempts, error and timestamps. Later asset edits and approval
+output hashes, state, attempts, service failure count, error and timestamps. Later asset edits and approval
 changes never alter these snapshots. Generations have no delete endpoint. Placeholder
 trial generations carry `placeholder: true` so a later deliberate cleanup can identify
 them. This slice provides no cleanup command.
@@ -223,11 +227,16 @@ library-owned schema idempotently under a database lock. The worker runs one gen
 at a time, enforced by concurrency one and a common Procrastinate lock. Each generation
 has one job; its one to four outputs are obtained by sequential `n=1` calls, preserving
 completed outputs before any retry. Jobs transition waiting → running → done, or failed.
-Connection errors, timeouts and service 5xx retry indefinitely with delays of
-10, 20, 40, 80, 160, then 300 seconds. A 4xx or the placeholder's deliberate failure is
-terminal. Calls allow 30 minutes per image. Worker shutdown allows a call to finish. Compose uses an init process to forward
-stop signals during startup as well as normal operation; disposable CI teardown
-uses a short timeout.
+Connection refusal and DNS failures retry indefinitely with delays of
+10, 20, 40, 80, 160, then 300 seconds. Timeouts and service 5xx retry at most twice
+more, then fail with the status (or timeout description); a paid request may already
+have run. The migrated `service_failures` counter preserves this limit across worker
+restarts and is independent of connection-only attempts. Completed outputs stay retained.
+HTTP 402 fails on the first attempt with “Monthly image budget reached — resets on the
+1st (UTC)”. All other 4xx fail immediately with their status. Malformed image responses
+and unsupported profiles are terminal. Calls allow 360 seconds per image; worker
+shutdown allows 400 seconds. Compose uses an init process to forward stop signals
+during startup as well as normal operation; disposable CI teardown uses a short timeout.
 Procrastinate heartbeat checks recover interrupted jobs; a lost HTTP response can
 cause that unfinished output to be requested again, since the contract has no idempotency
 key. Already stored outputs are retained.
@@ -235,19 +244,57 @@ key. Already stored outputs are retained.
 `IMAGE_API_BASE_URL` configures the endpoint base (including `/v1`);
 `IMAGE_API_KEY` optionally supplies a Bearer key. Both are server environment variables;
 the browser receives neither. The endpoint's `/model/info` supplies the names and
-capabilities shown by the UI. Non-image models are ignored. Last successful metadata
-is persisted to allow queueing during endpoint outages; queueing checks the reference
-limit using that metadata and never silently drops an image. Unknown models and counts
-outside one to four are refused. No real provider or model is configured in this repository.
+capabilities shown by the UI. Non-image models are ignored (`mode` must be
+`image_generation`). The client reads `display_name`, `paid`, `placeholder`,
+`seconds_per_image`, `max_references`, `endpoint`, `response`, `reference_max_side`,
+`licence` and `price_per_image`; the interface also reads `price_per_reference` and
+`price_estimated`. Prices are USD: the lowest configured price is shown as “from $X
+per image”, plus reference pricing where supplied, labelled “estimated” where applicable.
+All profile fields, including unknown ones, are kept in cached metadata and generation
+snapshots. `prompt_family`, `reference_slots`, `price_checked`, `aspect_ratios`,
+`resolutions`, `sizes`, `advanced` and `max_prompt_chars` are retained; this slice
+adds no per-run settings or model-specific prompt rendering.
+
+Last successful metadata is persisted to allow queueing during endpoint outages;
+retired entries are marked unlisted, never deleted. Queuing and retrying refuse models
+no longer listed. Retry retains the original prompt, profile and reference snapshot.
+Queueing checks the reference limit and never silently drops an image. Unknown models
+and counts outside one to four are refused. Model names are read at runtime.
+
+The model's `endpoint` selects one of two request shapes, one output per call:
+
+- `images/edits`: multipart `model`, `prompt`, `image[]`, `n=1` and
+  `response_format=b64_json`; without references, JSON to `images/generations`.
+- `chat/completions`: one user message with the prompt text part first, followed by
+  ordered `image_url` parts containing image data URLs, `modalities: ["text", "image"]`
+  and no `n`. Decode the first `choices[0].message.images` entry's data URL.
+
+`b64_json` and `message_images` responses are decoded locally. A `url` response profile
+is refused as an unsupported model failure; the studio never fetches arbitrary output URLs.
+References larger than `reference_max_side` on their longer side (2048 when absent)
+are resized with Pillow, keeping aspect ratio. Smaller files are sent unchanged;
+resized copies are lossless PNGs made in memory, never stored. Each generation's
+ordered references retain the original hashes and a `sent_size: [width, height]`
+recorded at queue time using the same preparation routine. The originals are immutable;
+models in a comparison may therefore have different sent sizes for the same hashes.
+Older snapshots remain readable without this field.
+
+Only `app` and `worker` join the external Docker network `homelab-models`; Postgres,
+placeholder and cloudflared do not. Create that network before local/CI `compose up`;
+on the server it is supplied by the platform. The hosted route is reached at
+`http://litellm:4000/v1` without a published host port. Server configuration uses
+`COMPOSE_PROFILES=tunnel` and `IMAGE_API_KEY=unused`. The owner makes the first
+real generation; deployment checks use GET only.
 
 For local and CI trials, set `COMPOSE_PROFILES=placeholder` and
-`IMAGE_API_BASE_URL=http://placeholder:8300/v1` with an empty key. On the server use
-`COMPOSE_PROFILES=tunnel,placeholder` for this phase. The `placeholder` service runs
-from the same image, on the internal default network only, with **no published port**.
-It offers Placeholder A (four references, three seconds), Placeholder B (paid badge,
-ten references, eight seconds) and an always-failing model. These are explicitly marked
-simulators that draw a box at runtime, not real image models. The only published port
-remains `127.0.0.1:8200`. PostgreSQL, worker and placeholder publish no ports.
+`IMAGE_API_BASE_URL=http://placeholder:8300/v1` with an empty key. The `placeholder`
+service runs from the same image on the internal default network only, with no
+published port. It offers Placeholder A (four references, three seconds), Placeholder B
+(paid badge, ten references, eight seconds), an always-500 model, `placeholder-chat`
+(chat shape, 512 pixel reference limit) and `placeholder-budget` (always 402). All
+have full profiles and are explicitly marked simulators. Generated PNG metadata reports
+received dimensions for CI. The only published port remains `127.0.0.1:8200`.
+PostgreSQL, worker and placeholder publish no ports.
 
 Additional API routes:
 
@@ -269,7 +316,11 @@ clears approval. Asset detail accepts `include_rejected=true`. Hash navigation a
 `#project/<id>` and `#composition/<id>`. Waiting and running records update through
 polling. CI's `scripts/check_generation.py` prints proof of the complete placeholder
 journey, immutable history after canonical replacement, candidate approval/rejection,
-terminal failure, service-outage retry/recovery, limit refusal and restart persistence.
+terminal failure after three attempts, service-outage retry/recovery, limit refusal and restart persistence.
+`scripts/check_real_route.py` prints both request shapes with three large references,
+received dimensions versus original hashes and sent sizes, one-attempt budget failure,
+three-attempt HTTP 500 failure and retired-model retry refusal. The earlier proofs and
+the dump restore continue to run in CI.
 
 
 ## Compare and iterate
@@ -289,7 +340,7 @@ change models/counts before generating. Back to the current pack restores normal
 assembly. Drafts are not saved until Generate creates a new run. File metadata and
 asset descriptions are rebuilt on the server; draft hashes must belong to images
 of assets visible to the project, including deleted assets. Unknown, unattached or
-other-project files are refused. Each chosen model's limit is shown before Generate
+other-project files are refused. Each chosen model's licence, price and limit are shown before Generate
 and checked before any row/job is queued; one insufficient limit refuses the run.
 
 | Routes | Methods / behaviour |
@@ -400,9 +451,9 @@ The complete composition manifest adds:
   retries. Every generation contains its complete database snapshot: `id`,
   `run_id`, `retry_of`, `kind`, `variant_id`, `asset_id`, `model`, `model_info`,
   `prompt` (as sent), `assembled_prompt`, `edited`, ordered `references`,
-  `placeholder`, `count`, `state`, `outputs` (ordered hashes), `attempts`, `error`,
+  `placeholder`, `count`, `state`, `outputs` (ordered hashes), `attempts`, `service_failures`, `error`,
   `created_at`, `started_at`, `finished_at`. References retain `hash`, `asset_id`,
-  `asset_name`, `description`, `type_tag`, `role`, `media_type` as snapshotted.
+  `asset_name`, `description`, `type_tag`, `role`, `media_type` and, for new runs, `sent_size` as snapshotted.
 
 The complete package includes every file used by these asset records, references,
 outputs and finals. Current asset fields and flags describe export-time records;

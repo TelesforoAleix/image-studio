@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
+import { ModelCost } from "./ModelCost";
 
 function Badges({ info }) {
   return (
     <>
       {info.paid && <span className="badge">Paid</span>}{" "}
-      {info.placeholder && <span className="badge">Placeholder</span>}
+      {info.placeholder && <span className="badge">Placeholder</span>}{" "}
+      <ModelCost info={info} />
     </>
   );
 }

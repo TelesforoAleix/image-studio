@@ -13,7 +13,12 @@ from werkzeug.exceptions import HTTPException
 
 from image_studio.database import database_engine
 from image_studio.files import publish_file
-from image_studio.image_client import EndpointUnavailable, ImageClient, ModelFailure
+from image_studio.image_client import (
+    EndpointUnavailable,
+    ImageClient,
+    ModelFailure,
+    ServiceFailure,
+)
 from image_studio.schema import asset_images, generations, stored_files
 
 
@@ -137,6 +142,18 @@ def process_generation(identifier, url, *, client=None, root=None):
                         .values(outputs=outputs)
                     )
             change(state="done", finished_at=func.now(), error=None)
+        except ServiceFailure as error:
+            failures = snapshot["service_failures"] + 1
+            if failures >= 3:
+                change(
+                    state="failed",
+                    finished_at=func.now(),
+                    error=str(error),
+                    service_failures=failures,
+                )
+            else:
+                change(state="waiting", error=str(error), service_failures=failures)
+                raise
         except EndpointUnavailable as error:
             change(state="waiting", error=str(error))
             raise
