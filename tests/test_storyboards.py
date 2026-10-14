@@ -247,11 +247,15 @@ def test_s5_migration_with_run_and_final_twice(monkeypatch):
                 "UPDATE variants SET final_generation_id = 1, final_output = 0",
             ]:
                 connection.execute(text(sql))
-            before = list(connection.execute(select(generations)).mappings())
+            before = list(
+                connection.execute(text("SELECT * FROM generations")).mappings()
+            )
         command.upgrade(config, "head")
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert list(connection.execute(select(generations)).mappings()) == before
+            after = list(connection.execute(select(generations)).mappings())
+            assert [{key: row[key] for key in before[0]} for row in after] == before
+            assert all(row["service_failures"] == 0 for row in after)
             frame = connection.execute(select(variants)).mappings().one()
             assert frame["deleted_at"] is None and frame["deselected_images"] == []
             assert (
