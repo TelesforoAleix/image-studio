@@ -1,8 +1,9 @@
 # image studio
 
 A personal web application for making visually consistent AI-generated images.
-Global assets combine into stand-alone compositions or compositions inside projects, with ordered frames and retained generation history; a separate endpoint
-creates the images over HTTP. This repository holds code only; user work lives
+Global assets combine into stand-alone compositions or project storyboards,
+with ordered frames and retained generation history. A separate endpoint creates
+the images over HTTP. This repository holds code only; user work lives
 outside it.
 
 The app manages projects with shared creative instructions and a reusable asset
@@ -97,8 +98,8 @@ The composition header holds name, kind, changeable project, export buttons,
 Duplicate and inline Delete. Storyboards also show ordered frames with final
 thumbnails, selection, add, reorder and inline deletion. One tab is shown at a time:
 Setup edits direction, scene, shared asset pack and selected frame instructions and
-reference toggles; Generate shows the assembled/editable prompt, model counts and
-trade-offs, pinned reuse draft and newly queued run; History shows that frame's runs,
+reference toggles; Generate shows per-model rendered/editable prompts, format, priced quality or
+resolution, Advanced settings, cost estimates, pinned reuse and newly queued runs; History shows that frame's runs,
 snapshots, finals, reuse and retry. Reuse opens Generate. Duplicate copies composition
 fields, retained pack selections and live frames without runs, generations or finals.
 
@@ -594,3 +595,83 @@ Packages retain the files used by selections and history and still stream withou
 storing an archive or changing any record. `scripts/check_richer_assets.py` prints
 the complete placeholder journey, reference order and limits, lineage, style
 inheritance/replacement/deletion, both package versions and unchanged snapshots.
+
+
+## Per-model requests and run settings
+
+The shared R2 template remains project instructions, direction, style, scene,
+subject lines with preservation rules, then frame instructions. Rendering is
+fixed and deterministic in the studio; no model rewrites it. `openai` puts a
+numbered `Image 1: <name>, <role>, <type>` legend before the content. `gemini`
+puts content before the legend and stably orders Person references first, then
+all other references. Template reference numbers are remapped to that order.
+Unknown or missing `prompt_family` keeps the shared text and order unchanged.
+No references are dropped. A run exceeding `max_references`, `reference_slots`
+(`character` means Person; `object` means every other type), or `max_prompt_chars`
+is refused naming the model, selected count and limit, before any rows or jobs
+are inserted.
+
+Format is shared across a run, chosen from the intersection of selected models'
+ratios. The picker explains when a model lacks the chosen format. Each model's
+quality or resolution offers only priced values and defaults to the cheapest.
+A `sizes` profile offers its priced size values for the chosen ratio. Advanced
+controls start collapsed and use the profile's defaults, enumerated `values`
+or inclusive integer `range`. Edits and Reset affect one model's prompt.
+Reference-view generation uses the same rendering and setting controls.
+History shows shared content, rendered text, text as sent, ordered references,
+settings, request fields and estimated cost. Reuse settings pins reference files,
+shared content, each model's sent prompt, output count and settings into a draft.
+
+The client reads profiles from `/model/info` at queue time, retains them in the
+snapshot, and builds only named setting fields. `aspect_ratios.field` maps a
+ratio through a `values` map, or sends the ratio itself for a list. `qualities`
+and `resolutions` use their `field` and priced `values`. Alternatively, `sizes`
+is a list of `{value, aspect_ratio, resolution, price}`; its matching `value`
+is sent as `size`. Advanced entries name their request field with `name` (or
+explicit `field`) and describe `type`, `default`, and `values` or `range`.
+Plain fields are multipart strings on `images/edits`; dotted fields create nested
+JSON objects on `chat/completions`. Dotted multipart fields are refused.
+The existing protocol fields (model, prompt, one output and base64 response;
+or one user message and text/image modalities) remain. Chat image bytes are
+added as ordered `image_url` parts only when sending. With no references the
+existing image-generation JSON route is retained. No seed or unadvertised
+setting is sent, and endpoint credentials and image bytes never enter snapshots.
+
+Each model's cost is `count × (selected image price + reference count ×
+price_per_reference)`, with a missing reference price treated as zero. Decimal
+arithmetic calculates the estimate; Postgres stores it as `NUMERIC(18,8)`.
+The page shows price per image, each model's cost, the total, and “estimated”
+where `price_estimated` says so. This month's estimated spend is the sum of
+all generations created within this UTC calendar month, including failed rows
+and retries; past rows with no estimate contribute nothing. It is an estimate
+of queued work, not a billing ledger. The displayed budget is $20 a month,
+enforced by the platform; the studio adds no budget enforcement.
+
+| Route | Behaviour |
+| --- | --- |
+| `/api/render` | POST shared `content`, attached `references`, `format`, and `models`; returns per-model previews and costs without queuing |
+| `/api/variants/<id>/runs` | POST `models: [{model, count, prompt?, settings?}]`, optional shared `format`; pinned drafts also supply `references` and `content` |
+| `/api/spend` | GET `estimated_spend` and UTC month start |
+
+Settings are `{format, quality, advanced}`; `quality` stores the chosen quality,
+resolution or size value. The earlier shared `prompt` payload remains accepted
+as an explicit edit applying to each model. Generation snapshots add nullable
+`prompt_family`, `rendered_prompt`, `shared_references`, `settings`,
+`request_fields` (executed non-image fields) and `estimated_cost`; `references`
+retains each resized copy's `sent_size`. Shared reference order is retained so
+Reuse does not renumber a shared template using Gemini's reordered inputs.
+Exports include these fields through the complete snapshot.
+Alembic 0008 adds only nullable columns; existing rows, prompts, attachments,
+finals and files remain unchanged. Downgrade removes these columns to restore
+R2. Production rollback uses a revert PR and restart, preserving the columns
+and records rather than downgrading owner data.
+
+CI uses only the marked placeholder. Its OpenAI-shaped profile has mapped
+ratios and priced qualities; its Gemini-shaped profile has listed ratios,
+resolutions, reference slots and dotted fields; a third profile has `sizes`.
+Generated synthetic PNG metadata reports the exact non-image fields and sizes
+received. `check_model_requests.py` prints the rendering, field mapping,
+Advanced isolation, costs/monthly sum, refusals, local edit and reuse proofs.
+`check_model_requests_migration.py` proves R2 upgrade twice, unchanged past
+rows and downgrade; fresh database upgrades run twice in Postgres tests.
+Earlier journeys and the dump restore continue in the compose job.

@@ -1,6 +1,6 @@
 """Composition editing, fixed prompt previews and immutable generation queuing."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -12,6 +12,7 @@ from image_studio.api import get_row, images_for, serial, transaction, validate_
 from image_studio.image_client import prepare_reference
 from image_studio.jobs import defer
 from image_studio.prompting import assemble, reference_view
+from image_studio.requests import formats, snapshot
 from image_studio.schema import (
     asset_images,
     assets,
@@ -700,8 +701,16 @@ def reference_snapshot(refs, info):
     return [{**ref, "sent_size": prepare_reference(root, ref, info)[2]} for ref in refs]
 
 
+def snapshot_references(values, info):
+    values["references"] = reference_snapshot(values["references"], info)
+    sizes = {r["hash"]: r["sent_size"] for r in values["references"]}
+    values["shared_references"] = [
+        {**r, "sent_size": sizes[r["hash"]]} for r in values["shared_references"]
+    ]
+
+
 def queue(connection, preview, kind, **owner):
-    value = body(["model", "count", "prompt"], ["model", "count"])
+    value = body(["model", "count", "prompt", "settings"], ["model", "count"])
     if not isinstance(value["model"], str):
         raise BadRequest("model must be text")
     if type(value["count"]) is not int or not 1 <= value["count"] <= 4:
@@ -712,15 +721,16 @@ def queue(connection, preview, kind, **owner):
     if model is None:
         raise BadRequest("Choose an available image model")
     info = model["model_info"]
-    count = len(preview["references"])
-    if count > info["max_references"]:
-        raise BadRequest(
-            f"Selected {count} references; {model['model_name']} accepts at most "
-            f"{info['max_references']}. Adjust your selection."
-        )
-    prompt = value.get("prompt", preview["prompt"])
-    if not isinstance(prompt, str) or not prompt.strip():
-        raise BadRequest("prompt must be nonempty text")
+    values = snapshot(
+        value["model"],
+        preview["prompt"],
+        preview["references"],
+        info,
+        value["count"],
+        value.get("settings"),
+        value.get("prompt"),
+    )
+    snapshot_references(values, info)
     identifier = connection.execute(
         insert(generations)
         .values(
@@ -728,10 +738,7 @@ def queue(connection, preview, kind, **owner):
             **owner,
             model=value["model"],
             model_info=info,
-            prompt=prompt,
-            assembled_prompt=preview["prompt"],
-            edited=prompt != preview["prompt"],
-            references=reference_snapshot(preview["references"], info),
+            **values,
             placeholder=info["placeholder"],
             count=value["count"],
         )
@@ -804,7 +811,8 @@ def run_choices(value):
     for choice in choices:
         if (
             not isinstance(choice, dict)
-            or set(choice) != {"model", "count"}
+            or set(choice) - {"model", "count", "prompt", "settings"}
+            or not {"model", "count"} <= set(choice)
             or not isinstance(choice["model"], str)
             or type(choice["count"]) is not int
             or not 1 <= choice["count"] <= 4
@@ -880,7 +888,9 @@ def run_detail(connection, variant_id, run_id):
         "created_at": first["created_at"],
         "prompt": first["prompt"],
         "edited": first["edited"],
-        "references": first["references"],
+        "references": first["shared_references"]
+        if first["shared_references"] is not None
+        else first["references"],
         "generations": rows,
     }
 
@@ -899,35 +909,47 @@ def variant_runs(connection, identifier):
         ).all()
         return jsonify([run_detail(connection, identifier, r.run_id) for r in run_ids])
     live_variant(connection, identifier)
-    value = body(["models", "prompt", "references"], ["models"])
+    value = body(["models", "prompt", "references", "content", "format"], ["models"])
     choices = run_choices(value)
-    # Pinned drafts must work even if the current pack cannot be assembled.
     if "references" in value:
         refs = draft_references(connection, value["references"])
-        prompt = value.get("prompt")
-        assembled = prompt
-        edited = True
+        content = value.get("content", value.get("prompt"))
     else:
         preview = variant_preview(connection, identifier)
-        refs = preview["references"]
-        assembled = preview["prompt"]
-        prompt = value.get("prompt", assembled)
-        edited = prompt != assembled
-    if not isinstance(prompt, str) or not prompt.strip():
-        raise BadRequest("prompt must be nonempty text")
+        refs, content = preview["references"], preview["prompt"]
+    if not isinstance(content, str) or not content.strip():
+        raise BadRequest("content must be nonempty text")
     available = {m["model_name"]: m["model_info"] for m in model_list(connection)}
+    prepared = []
+    ratio = value.get("format")
     for choice in choices:
         info = available.get(choice["model"])
         if info is None:
             raise BadRequest("Choose an available image model")
-        if len(refs) > info["max_references"]:
-            raise BadRequest(
-                f"{choice['model']}: selected {len(refs)} references; "
-                f"accepts at most {info['max_references']}. Adjust your selection."
-            )
+        if ratio is None:
+            supported = [
+                set(formats(available[c["model"]]))
+                for c in choices
+                if c["model"] in available
+            ]
+            common = set.intersection(*supported)
+            if all(supported) and not common:
+                raise BadRequest("Chosen models have no common format")
+            ratio = "1:1" if "1:1" in common else next(iter(sorted(common)), None)
+        values = snapshot(
+            choice["model"],
+            content,
+            refs,
+            info,
+            choice["count"],
+            choice.get("settings"),
+            choice.get("prompt", value.get("prompt")),
+            ratio,
+        )
+        snapshot_references(values, info)
+        prepared.append((choice, info, values))
     run_id = str(uuid4())
-    for choice in choices:
-        info = available[choice["model"]]
+    for choice, info, values in prepared:
         row_id = connection.execute(
             insert(generations)
             .values(
@@ -937,11 +959,8 @@ def variant_runs(connection, identifier):
                 model=choice["model"],
                 model_info=info,
                 count=choice["count"],
-                prompt=prompt,
-                assembled_prompt=assembled,
-                edited=edited,
-                references=reference_snapshot(refs, info),
                 placeholder=info["placeholder"],
+                **values,
             )
             .returning(generations.c.id)
         ).scalar_one()
@@ -975,6 +994,12 @@ def retry_generation(connection, identifier):
         "references",
         "placeholder",
         "count",
+        "prompt_family",
+        "shared_references",
+        "rendered_prompt",
+        "settings",
+        "request_fields",
+        "estimated_cost",
     )
     row_id = connection.execute(
         insert(generations)
@@ -1027,3 +1052,54 @@ def final_image(connection, identifier):
         output=variant["final_output"],
         hash=row["outputs"][variant["final_output"]],
     )
+
+
+@generation_api.get("/spend")
+@transaction
+def spend(connection):
+    start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = (
+        start.replace(year=start.year + 1, month=1)
+        if start.month == 12
+        else start.replace(month=start.month + 1)
+    )
+    total = connection.scalar(
+        select(func.coalesce(func.sum(generations.c.estimated_cost), 0)).where(
+            generations.c.created_at >= start, generations.c.created_at < end
+        )
+    )
+    return jsonify(estimated_spend=float(total), month=start.isoformat())
+
+
+@generation_api.post("/render")
+@transaction
+def render_preview(connection):
+    value = body(
+        ["content", "references", "models", "format"],
+        ["content", "references", "models"],
+    )
+    if not isinstance(value["content"], str):
+        raise BadRequest("content must be text")
+    refs = draft_references(connection, value["references"])
+    available = {m["model_name"]: m["model_info"] for m in model_list(connection)}
+    result = []
+    for choice in run_choices(value):
+        info = available.get(choice["model"])
+        if info is None:
+            raise BadRequest("Choose an available image model")
+        result.append(
+            {
+                "model": choice["model"],
+                **snapshot(
+                    choice["model"],
+                    value["content"],
+                    refs,
+                    info,
+                    choice["count"],
+                    choice.get("settings"),
+                    choice.get("prompt"),
+                    value.get("format"),
+                ),
+            }
+        )
+    return jsonify(result)
