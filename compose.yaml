@@ -12,6 +12,7 @@ services:
     networks:
       - default
       - tunnel
+      - models
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,7 +37,8 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
-    stop_grace_period: 1900s
+    stop_grace_period: 400s
+    networks: [default, models]
   placeholder:
     build: .
     profiles: [placeholder]
@@ -71,6 +73,9 @@ services:
     restart: unless-stopped
 
 networks:
+  models:
+    external: true
+    name: homelab-models
   tunnel:
 
 volumes:

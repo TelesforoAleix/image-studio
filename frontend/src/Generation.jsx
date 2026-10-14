@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { ModelCost } from "./ModelCost";
 
 export function ModelPicker({
   models,
@@ -35,7 +36,7 @@ export function ModelPicker({
             {m.model_info.placeholder && (
               <span className="badge">Placeholder</span>
             )}{" "}
-            · accepts {m.model_info.max_references} references ·{" "}
+            <ModelCost info={m.model_info} /> · accepts {m.model_info.max_references} references ·{" "}
             {m.model_info.seconds_per_image == null
               ? "Time unknown"
               : `About ${m.model_info.seconds_per_image} seconds per image`}
@@ -100,6 +101,7 @@ export function History({ path, act, revision, refresh }) {
               {g.state} · {g.outputs.length}/{g.count}
             </strong>
             <span>{g.model_info.display_name}</span>
+            <ModelCost info={g.model_info} />
             {g.placeholder && <span className="badge">Placeholder trial</span>}
             <small>{new Date(g.created_at).toLocaleString()}</small>
             {g.error && <p>{g.error}</p>}

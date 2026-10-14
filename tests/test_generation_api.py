@@ -184,7 +184,7 @@ def test_reference_candidates_approve_reject_and_keep_files(generation_client):
 def test_endpoint_outage_cached_models_retry_and_terminal_failure(generation_client):
     c, _, root = generation_client
     asset = new_asset(c)
-    assert len(c.get("/api/models").json) == 3
+    assert len(c.get("/api/models").json) == 5
 
     def unavailable(request):
         raise httpx.ConnectError("offline", request=request)
@@ -215,6 +215,17 @@ def test_endpoint_outage_cached_models_retry_and_terminal_failure(generation_cli
         f"/api/assets/{asset['id']}/generations",
         json={"model": "placeholder-fails", "count": 1},
     ).json
+    for _ in range(2):
+        with pytest.raises(EndpointUnavailable):
+            process_generation(
+                fail["id"],
+                c.application.config["DATABASE_URL"],
+                root=root,
+                client=ImageClient(
+                    "http://endpoint/v1",
+                    transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+                ),
+            )
     process_generation(
         fail["id"],
         c.application.config["DATABASE_URL"],
@@ -390,3 +401,90 @@ def test_partial_outputs_survive_retry(generation_client):
     done = c.get(f"/api/generations/{queued['id']}").json
     assert done["state"] == "done" and done["outputs"][0] == waiting["outputs"][0]
     assert len(calls) == 3 and len(done["outputs"]) == 2
+
+
+@pytest.mark.parametrize(
+    "failure_kind,expected_attempts",
+    [("500", 3), ("timeout", 3), ("402", 1), ("400", 1), ("429", 1)],
+)
+def test_worker_limits_uncertain_calls_and_never_retries_4xx(
+    generation_client, failure_kind, expected_attempts
+):
+    c, _, root = generation_client
+    asset = new_asset(c)
+    queued = c.post(
+        f"/api/assets/{asset['id']}/generations",
+        json={"model": "placeholder-a", "count": 1},
+    ).json
+
+    def handler(request):
+        if failure_kind == "timeout":
+            raise httpx.ReadTimeout("synthetic-key", request=request)
+        return httpx.Response(int(failure_kind), text="synthetic-key")
+
+    endpoint = ImageClient("http://endpoint/v1", transport=httpx.MockTransport(handler))
+    for _ in range(expected_attempts - 1):
+        with pytest.raises(EndpointUnavailable):
+            process_generation(
+                queued["id"],
+                c.application.config["DATABASE_URL"],
+                client=endpoint,
+                root=root,
+            )
+        assert c.get(f"/api/generations/{queued['id']}").json["state"] == "waiting"
+    process_generation(
+        queued["id"], c.application.config["DATABASE_URL"], client=endpoint, root=root
+    )
+    row = c.get(f"/api/generations/{queued['id']}").json
+    assert row["state"] == "failed" and row["attempts"] == expected_attempts
+    assert "synthetic-key" not in row["error"]
+    assert (
+        ("timeout" in row["error"])
+        if failure_kind == "timeout"
+        else (
+            row["error"] == "Monthly image budget reached — resets on the 1st (UTC)"
+            if failure_kind == "402"
+            else failure_kind in row["error"]
+        )
+    )
+    process_generation(
+        queued["id"], c.application.config["DATABASE_URL"], client=endpoint, root=root
+    )
+    assert c.get(f"/api/generations/{queued['id']}").json == row
+
+
+def test_connection_retries_do_not_spend_uncertain_call_budget(generation_client):
+    c, _, root = generation_client
+    asset = new_asset(c)
+    queued = c.post(
+        f"/api/assets/{asset['id']}/generations",
+        json={"model": "placeholder-a", "count": 1},
+    ).json
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) <= 4:
+            raise httpx.ConnectError("synthetic DNS/refusal", request=request)
+        return httpx.Response(503)
+
+    endpoint = ImageClient("http://endpoint/v1", transport=httpx.MockTransport(handler))
+    for i in range(6):
+        with pytest.raises(EndpointUnavailable):
+            process_generation(
+                queued["id"],
+                c.application.config["DATABASE_URL"],
+                client=endpoint,
+                root=root,
+            )
+        row = c.get(f"/api/generations/{queued['id']}").json
+        assert row["state"] == "waiting" and row["service_failures"] == max(0, i - 3)
+    process_generation(
+        queued["id"], c.application.config["DATABASE_URL"], client=endpoint, root=root
+    )
+    row = c.get(f"/api/generations/{queued['id']}").json
+    assert (
+        row["state"] == "failed"
+        and row["attempts"] == 7
+        and row["service_failures"] == 3
+    )

@@ -19,7 +19,7 @@ from werkzeug.exceptions import BadRequest
 
 from image_studio.database import database_engine
 from image_studio.generation_api import run_choices
-from image_studio.image_client import ImageClient
+from image_studio.image_client import EndpointUnavailable, ImageClient
 from image_studio.jobs import process_generation
 from image_studio.schema import generations
 
@@ -51,6 +51,18 @@ def test_valid_choices_are_ordered():
 
 
 def complete(c, root, row, fail=False):
+    if fail:
+        for _ in range(2):
+            with pytest.raises(EndpointUnavailable):
+                process_generation(
+                    row["id"],
+                    c.application.config["DATABASE_URL"],
+                    root=root,
+                    client=ImageClient(
+                        "http://endpoint/v1",
+                        transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+                    ),
+                )
     process_generation(
         row["id"],
         c.application.config["DATABASE_URL"],
@@ -234,10 +246,49 @@ def test_retry_uses_original_model_metadata(generation_client):
             .where(generations.c.id == row["id"])
             .values(state="failed")
         )
-    # Retry needs no endpoint discovery, including when a model disappears.
-    c.application.extensions["image_client"] = None
+    # Still listed, with updated metadata: retry preserves the old profile.
+    from image_studio.placeholder import MODELS
+
+    c.application.extensions["image_client"] = ImageClient(
+        "http://endpoint/v1",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            **m,
+                            "model_info": {
+                                **m["model_info"],
+                                "licence": "Updated synthetic licence",
+                            },
+                        }
+                        for m in MODELS
+                    ]
+                },
+            )
+        ),
+    )
     retry = c.post(f"/api/generations/{row['id']}/retry")
     assert retry.status_code == 201 and retry.json["model_info"] == row["model_info"]
+    c.application.extensions["image_client"] = ImageClient(
+        "http://endpoint/v1",
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"data": []})),
+    )
+    assert c.get("/api/models").json == []
+    before = c.get(f"/api/variants/{comp['variants'][0]['id']}/runs").json
+    refused = c.post(f"/api/generations/{row['id']}/retry")
+    assert refused.status_code == 400 and "no longer listed" in refused.json["error"]
+    assert c.get(f"/api/variants/{comp['variants'][0]['id']}/runs").json == before
+
+    # A subsequent discovery outage must not resurrect cached retired entries.
+    def offline(request):
+        raise httpx.ConnectError("synthetic offline", request=request)
+
+    c.application.extensions["image_client"] = ImageClient(
+        "http://endpoint/v1", transport=httpx.MockTransport(offline)
+    )
+    assert c.post(f"/api/generations/{row['id']}/retry").status_code == 503
 
 
 def test_s4_generation_backfill_twice(monkeypatch):

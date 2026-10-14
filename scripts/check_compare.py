@@ -65,7 +65,8 @@ def main():
         g["run_id"] == run["run_id"]
         and g["prompt"] == edited
         and g["edited"]
-        and g["references"] == preview["references"]
+        and [{k: v for k, v in r.items() if k != "sent_size"} for r in g["references"]]
+        == preview["references"]
         and g["placeholder"]
         for g in initial["generations"]
     )
@@ -85,7 +86,8 @@ def main():
     assert all(
         g["run_id"] == run["run_id"]
         and g["prompt"] == edited
-        and g["references"] == preview["references"]
+        and [{k: v for k, v in r.items() if k != "sent_size"} for r in g["references"]]
+        == preview["references"]
         for g in after_retry["generations"]
     )
     print(

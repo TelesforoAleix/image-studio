@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
 
 from image_studio.api import get_row, images_for, serial, transaction
+from image_studio.image_client import prepare_reference
 from image_studio.jobs import defer
 from image_studio.prompting import assemble, reference_view
 from image_studio.schema import (
@@ -152,19 +153,26 @@ def model_list(connection):
         models = [
             {"model_name": r["name"], "model_info": r["info"]}
             for r in connection.execute(
-                select(image_models).order_by(image_models.c.name)
+                select(image_models)
+                .where(image_models.c.listed.is_(True))
+                .order_by(image_models.c.name)
             ).mappings()
         ]
         if not models:
             raise
         return models
+    connection.execute(update(image_models).values(listed=False))
     for model in models:
         connection.execute(
             pg_insert(image_models)
-            .values(name=model["model_name"], info=model["model_info"])
+            .values(name=model["model_name"], info=model["model_info"], listed=True)
             .on_conflict_do_update(
                 index_elements=["name"],
-                set_={"info": model["model_info"], "read_at": func.now()},
+                set_={
+                    "info": model["model_info"],
+                    "read_at": func.now(),
+                    "listed": True,
+                },
             )
         )
     return models
@@ -452,6 +460,11 @@ def preview(connection, identifier):
     )
 
 
+def reference_snapshot(refs, info):
+    root = current_app.config["STUDIO_FILES"]
+    return [{**ref, "sent_size": prepare_reference(root, ref, info)[2]} for ref in refs]
+
+
 def queue(connection, preview, kind, **owner):
     value = body(["model", "count", "prompt"], ["model", "count"])
     if not isinstance(value["model"], str):
@@ -483,7 +496,7 @@ def queue(connection, preview, kind, **owner):
             prompt=prompt,
             assembled_prompt=preview["prompt"],
             edited=prompt != preview["prompt"],
-            references=preview["references"],
+            references=reference_snapshot(preview["references"], info),
             placeholder=info["placeholder"],
             count=value["count"],
         )
@@ -695,7 +708,7 @@ def variant_runs(connection, identifier):
                 prompt=prompt,
                 assembled_prompt=assembled,
                 edited=edited,
-                references=refs,
+                references=reference_snapshot(refs, info),
                 placeholder=info["placeholder"],
             )
             .returning(generations.c.id)
@@ -713,6 +726,10 @@ def retry_generation(connection, identifier):
     if original["variant_id"] is not None:
         variant = live_variant(connection, original["variant_id"])
         composition(connection, variant["composition_id"])
+    if original["model"] not in {m["model_name"] for m in model_list(connection)}:
+        raise BadRequest(
+            "This image model is no longer listed; choose an available model"
+        )
     keys = (
         "kind",
         "variant_id",
