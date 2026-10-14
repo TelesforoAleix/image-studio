@@ -184,7 +184,7 @@ def test_reference_candidates_approve_reject_and_keep_files(generation_client):
 def test_endpoint_outage_cached_models_retry_and_terminal_failure(generation_client):
     c, _, root = generation_client
     asset = new_asset(c)
-    assert len(c.get("/api/models").json) == 5
+    assert len(c.get("/api/models").json) == len(MODELS)
 
     def unavailable(request):
         raise httpx.ConnectError("offline", request=request)

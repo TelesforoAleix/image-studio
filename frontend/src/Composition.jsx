@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
-import { Runs, RunPicker, PinnedReferences } from "./Runs";
+import { Runs, PinnedReferences } from "./Runs";
+import { ModelRequests } from "./ModelRequests";
 import { Storyboard } from "./CompositionControls";
 import { CompositionSetup } from "./CompositionSetup";
 
@@ -23,8 +24,9 @@ export function CompositionPage({
   const [scene, setScene] = useState("");
   const [instructions, setInstructions] = useState("");
   const [preview, setPreview] = useState(null);
-  const [editing, setEditing] = useState(false);
-  const [edited, setEdited] = useState("");
+  const [draftContent, setDraftContent] = useState("");
+  const [format, setFormat] = useState("1:1");
+  const [rendered, setRendered] = useState(null);
   const [models, setModels] = useState([]);
   const [choices, setChoices] = useState([]);
   const [draft, setDraft] = useState(null);
@@ -59,8 +61,7 @@ export function CompositionPage({
     setInstructions(variant.instructions);
     setFrameName(variant.name);
     setDraft(null);
-    setEditing(false);
-    setEdited("");
+    setDraftContent("");
     setQueuedRun(null);
   }, [variant?.id]);
   useEffect(() => {
@@ -290,8 +291,7 @@ export function CompositionPage({
                 type="button"
                 onClick={() => {
                   setDraft(null);
-                  setEditing(false);
-                  setEdited("");
+                  setDraftContent("");
                 }}
               >
                 Back to the current pack
@@ -299,43 +299,6 @@ export function CompositionPage({
             </>
           )}
           <div className="panel">
-            <h3 id="prompt-editor">Prompt to send</h3>
-            {editing ? (
-              <label>
-                Edited prompt
-                <textarea
-                  rows="12"
-                  value={edited}
-                  onChange={(e) => setEdited(e.target.value)}
-                />
-              </label>
-            ) : (
-              <pre>{preview?.prompt || "Preparing preview…"}</pre>
-            )}
-            <div className="actions">
-              <button
-                type="button"
-                disabled={!preview}
-                onClick={() => {
-                  if (!editing) setEdited(preview.prompt);
-                  setEditing(true);
-                }}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                disabled={draft !== null}
-                onClick={() => {
-                  if (draft === null) {
-                    setEditing(false);
-                    setEdited("");
-                  }
-                }}
-              >
-                Reset
-              </button>
-            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -347,7 +310,8 @@ export function CompositionPage({
                     {
                       models: choices,
                       ...(draft !== null ? { references: draft } : {}),
-                      prompt: editing ? edited : preview.prompt,
+                      format,
+                      ...(draft !== null ? { content: draftContent } : {}),
                     },
                   );
                   setQueuedRun(run.run_id);
@@ -355,19 +319,26 @@ export function CompositionPage({
                 });
               }}
             >
-              <RunPicker
-                models={models}
-                choices={choices}
-                setChoices={setChoices}
-                references={references.length}
-                busy={busy}
+              <ModelRequests
+                {...{
+                  models,
+                  choices,
+                  setChoices,
+                  format,
+                  setFormat,
+                  busy,
+                  revision,
+                }}
+                content={draft !== null ? draftContent : preview?.prompt}
+                references={references}
+                onPreview={setRendered}
               />
               <button
                 disabled={
                   busy ||
                   invalidModels ||
                   (draft === null && !preview) ||
-                  (editing && !edited.trim())
+                  !rendered
                 }
               >
                 Generate
@@ -401,10 +372,15 @@ export function CompositionPage({
               setChoices(
                 run.generations
                   .filter((g) => !g.retry_of)
-                  .map((g) => ({ model: g.model, count: g.count })),
+                  .map((g) => ({
+                    model: g.model,
+                    count: g.count,
+                    prompt: g.prompt,
+                    ...(g.settings ? { settings: g.settings } : {}),
+                  })),
               );
-              setEdited(run.prompt);
-              setEditing(true);
+              setDraftContent(run.generations[0].assembled_prompt);
+              setFormat(run.generations[0].settings?.format || "1:1");
               navigate("generate");
             }}
           />

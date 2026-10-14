@@ -1,7 +1,9 @@
 import React from "react";
 
 export function priceText(info) {
-  const prices = Object.values(info.price_per_image || {});
+  const prices = info.sizes
+    ? info.sizes.filter((s) => s.price != null).map((s) => s.price)
+    : Object.values(info.price_per_image || {});
   if (!prices.length) return "";
   let text = `from $${Math.min(...prices)} per image`;
   if (info.price_per_reference != null)
@@ -11,5 +13,7 @@ export function priceText(info) {
 }
 
 export function ModelCost({ info }) {
-  return <span>{[info.licence, priceText(info)].filter(Boolean).join(" · ")}</span>;
+  return (
+    <span>{[info.licence, priceText(info)].filter(Boolean).join(" · ")}</span>
+  );
 }

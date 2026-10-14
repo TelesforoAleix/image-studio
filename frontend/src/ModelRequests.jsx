@@ -1,0 +1,370 @@
+import React, { useEffect, useState } from "react";
+import { api } from "./api";
+import { ModelCost } from "./ModelCost";
+
+export function formats(info) {
+  return info.sizes
+    ? [...new Set(info.sizes.map((s) => s.aspect_ratio))]
+    : Object.keys(info.aspect_ratios?.values || {}).map((k) =>
+        Array.isArray(info.aspect_ratios.values)
+          ? info.aspect_ratios.values[k]
+          : k,
+      );
+}
+function prices(info, format) {
+  if (info.sizes)
+    return Object.fromEntries(
+      info.sizes
+        .filter((s) => s.aspect_ratio === format && s.price != null)
+        .map((s) => [s.value, s.price]),
+    );
+  const spec = info.qualities || info.resolutions;
+  return Object.fromEntries(
+    Object.entries(info.price_per_image || {}).filter(
+      ([k]) => !spec || spec.values.includes(k),
+    ),
+  );
+}
+export function defaults(info, format) {
+  const costs = prices(info, format);
+  return {
+    format,
+    quality: Object.keys(costs).sort((a, b) => costs[a] - costs[b])[0],
+    advanced: Object.fromEntries(
+      (info.advanced || []).map((s) => [s.name, s.default]),
+    ),
+  };
+}
+export function ModelRequests({
+  models,
+  choices,
+  setChoices,
+  format,
+  setFormat,
+  content,
+  references,
+  busy,
+  onPreview,
+  revision,
+  limit = 3,
+}) {
+  const [panels, setPanels] = useState([]);
+  const [error, setError] = useState("");
+  const [spend, setSpend] = useState(null);
+  useEffect(() => {
+    api("/spend")
+      .then(setSpend)
+      .catch((e) => setError(e.message));
+  }, [revision]);
+  useEffect(() => {
+    let active = true;
+    onPreview(null);
+    setError("");
+    const timer = setTimeout(async () => {
+      if (!choices.length || !content) {
+        if (active) setPanels([]);
+        return;
+      }
+      try {
+        const result = await api("/render", "POST", {
+          content,
+          references,
+          models: choices,
+          format,
+        });
+        if (active) {
+          setPanels(result);
+          onPreview(result);
+        }
+      } catch (e) {
+        if (active) {
+          setPanels([]);
+          setError(e.message);
+        }
+      }
+    }, 200);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [models, choices, format, content, references]);
+  const chosen = models.filter((m) =>
+    choices.some((c) => c.model === m.model_name),
+  );
+  const ratios = chosen.length
+    ? formats(chosen[0].model_info).filter((r) =>
+        chosen.every((m) => formats(m.model_info).includes(r)),
+      )
+    : [...new Set(models.flatMap((m) => formats(m.model_info)))];
+  const change = (name, values) =>
+    setChoices(
+      choices.map((c) => (c.model === name ? { ...c, ...values } : c)),
+    );
+  return (
+    <>
+      <label>
+        Format
+        <select
+          value={format}
+          disabled={busy}
+          onChange={(e) => {
+            setFormat(e.target.value);
+            setChoices(
+              choices.map((c) => ({
+                ...c,
+                settings: (() => {
+                  const info = models.find(
+                    (m) => m.model_name === c.model,
+                  )?.model_info;
+                  if (!info) return c.settings;
+                  const next = defaults(info, e.target.value);
+                  return {
+                    ...next,
+                    advanced: c.settings?.advanced || next.advanced,
+                    quality:
+                      c.settings?.quality in prices(info, e.target.value)
+                        ? c.settings.quality
+                        : next.quality,
+                  };
+                })(),
+              })),
+            );
+          }}
+        >
+          {ratios.map((r) => (
+            <option key={r}>{r}</option>
+          ))}
+        </select>
+      </label>
+      <fieldset disabled={busy}>
+        <legend>
+          {limit === 1 ? "Choose a model" : "Compare one to three models"}
+        </legend>
+        {models.map((m) => {
+          const c = choices.find((c) => c.model === m.model_name);
+          const supports = formats(m.model_info).includes(format);
+          return (
+            <div className="model-option" key={m.model_name}>
+              <label>
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={!!c}
+                    disabled={!c && (!supports || choices.length >= limit)}
+                    onChange={(e) =>
+                      setChoices(
+                        e.target.checked
+                          ? [
+                              ...choices,
+                              {
+                                model: m.model_name,
+                                count: 1,
+                                settings: defaults(m.model_info, format),
+                              },
+                            ]
+                          : choices.filter((x) => x.model !== m.model_name),
+                      )
+                    }
+                  />
+                  {m.model_info.display_name}
+                </span>
+              </label>
+              <ModelCost info={m.model_info} />
+              {!supports && <p>Does not support {format}</p>}
+              {m.model_info.placeholder && (
+                <span className="badge">Placeholder</span>
+              )}
+            </div>
+          );
+        })}
+        {choices
+          .filter((c) => !models.some((m) => m.model_name === c.model))
+          .map((c) => (
+            <p className="error" key={c.model}>
+              {c.model} is no longer available.{" "}
+              <button
+                type="button"
+                onClick={() =>
+                  setChoices(choices.filter((x) => x.model !== c.model))
+                }
+              >
+                Remove model
+              </button>
+            </p>
+          ))}
+      </fieldset>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <div className="request-panels">
+        {choices.map((c) => {
+          const info = models.find((m) => m.model_name === c.model)?.model_info;
+          if (!info) return null;
+          const settings = c.settings || defaults(info, format);
+          const panel = panels.find((p) => p.model === c.model);
+          const price = prices(info, format)[settings.quality];
+          return (
+            <section className="panel model-column" key={c.model}>
+              <h3>{info.display_name}</h3>
+              <label>
+                Outputs
+                <select
+                  value={c.count}
+                  onChange={(e) =>
+                    change(c.model, { count: Number(e.target.value) })
+                  }
+                >
+                  {[1, 2, 3, 4].map((n) => (
+                    <option key={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {info.resolutions
+                  ? "Resolution"
+                  : info.sizes
+                    ? "Size / resolution"
+                    : "Quality"}
+                <select
+                  value={settings.quality}
+                  onChange={(e) =>
+                    change(c.model, {
+                      settings: { ...settings, quality: e.target.value },
+                    })
+                  }
+                >
+                  {Object.entries(prices(info, format)).map(([v, p]) => (
+                    <option key={v} value={v}>
+                      {v} · ${p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p>
+                ${price} per image
+                {info.price_per_reference != null &&
+                  ` + $${info.price_per_reference} per reference`}
+                {info.price_estimated && " (estimated)"}
+              </p>
+              <details>
+                <summary>Advanced</summary>
+                {(info.advanced || []).map((s) => (
+                  <label key={s.name}>
+                    {s.name}
+                    {s.values ? (
+                      <select
+                        value={settings.advanced[s.name]}
+                        onChange={(e) =>
+                          change(c.model, {
+                            settings: {
+                              ...settings,
+                              advanced: {
+                                ...settings.advanced,
+                                [s.name]: e.target.value,
+                              },
+                            },
+                          })
+                        }
+                      >
+                        {s.values.map((v) => (
+                          <option key={v}>{v}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="number"
+                        min={s.range[0]}
+                        max={s.range[1]}
+                        step="1"
+                        value={settings.advanced[s.name]}
+                        onChange={(e) =>
+                          change(c.model, {
+                            settings: {
+                              ...settings,
+                              advanced: {
+                                ...settings.advanced,
+                                [s.name]: Number(e.target.value),
+                              },
+                            },
+                          })
+                        }
+                      />
+                    )}
+                  </label>
+                ))}
+              </details>
+              <h4>Prompt to send</h4>
+              {c.prompt !== undefined ? (
+                <textarea
+                  aria-label={`Prompt for ${info.display_name}`}
+                  rows="12"
+                  value={c.prompt}
+                  onChange={(e) => change(c.model, { prompt: e.target.value })}
+                />
+              ) : (
+                <pre>{panel?.rendered_prompt || "Preparing preview…"}</pre>
+              )}
+              <div className="actions">
+                <button
+                  type="button"
+                  disabled={!panel}
+                  onClick={() =>
+                    change(c.model, { prompt: panel.rendered_prompt })
+                  }
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setChoices(
+                      choices.map((x) => {
+                        if (x.model !== c.model) return x;
+                        const { prompt, ...rest } = x;
+                        return rest;
+                      }),
+                    )
+                  }
+                >
+                  Reset
+                </button>
+              </div>
+              <div className="reference-toggles">
+                {panel?.references.map((r, i) => (
+                  <figure key={i}>
+                    <img
+                      src={`/api/files/${r.hash}`}
+                      alt={`Image ${i + 1}: ${r.asset_name}`}
+                    />
+                    <figcaption>
+                      Image {i + 1}: {r.asset_name} · {r.role}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+              {panel && (
+                <p>
+                  Model cost: ${panel.estimated_cost.toFixed(5)}
+                  {info.price_estimated && " (estimated)"}
+                </p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+      <p>
+        Run cost:{" "}
+        {panels.length === choices.length && panels.length
+          ? `$${panels.reduce((s, p) => s + p.estimated_cost, 0).toFixed(5)}${chosen.some((m) => m.model_info.price_estimated) ? " (estimated)" : ""}`
+          : "Choose models and valid settings"}
+      </p>
+      <p>
+        This month's estimated spend (UTC):{" "}
+        {spend ? `$${spend.estimated_spend.toFixed(5)}` : "Loading…"} · budget:
+        $20 a month, enforced by the platform
+      </p>
+    </>
+  );
+}

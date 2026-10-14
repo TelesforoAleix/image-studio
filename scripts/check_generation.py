@@ -38,6 +38,7 @@ def main():
         "placeholder-fails",
         "placeholder-chat",
         "placeholder-budget",
+        "placeholder-sizes",
     }
     assert all(m["model_info"]["placeholder"] for m in models)
     project = request(

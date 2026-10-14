@@ -57,8 +57,8 @@ def main():
             )
         )
     before = snapshot(engine)
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0007")
+    command.upgrade(config, "0007")
     after = snapshot(engine)
     assert {r["type_tag"]: r["type"] for r in after["assets"] if r["type_tag"]} == {
         "character": "person",
@@ -84,8 +84,8 @@ def main():
     command.downgrade(config, "0006")
     assert snapshot(engine) == before
     print("PROOF RICH MIGRATION downgrade restores R1 unchanged", before, flush=True)
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0007")
+    command.upgrade(config, "0007")
     assert snapshot(engine) == after
     engine.dispose()
 

@@ -3,6 +3,7 @@
 import base64
 import binascii
 import io
+from copy import deepcopy
 
 import httpx
 from PIL import Image
@@ -62,11 +63,16 @@ class ImageClient:
                         not in ("images/edits", "chat/completions")
                         or info.get("response")
                         not in ("b64_json", "url", "message_images")
-                        or not isinstance(info.get("price_per_image"), dict)
-                        or not info["price_per_image"]
+                        or (
+                            not info.get("sizes")
+                            and (
+                                not isinstance(info.get("price_per_image"), dict)
+                                or not info["price_per_image"]
+                            )
+                        )
                         or any(
                             type(price) not in (int, float) or price < 0
-                            for price in info["price_per_image"].values()
+                            for price in info.get("price_per_image", {}).values()
                         )
                         or type(info.get("reference_max_side", 2048)) is not int
                         or info.get("reference_max_side", 2048) < 1
@@ -111,6 +117,9 @@ class ImageClient:
             "n": 1,
             "response_format": "b64_json",
         }
+        if endpoint == "chat/completions" and not generation.get("request_fields"):
+            fields = {"model": generation["model"], "modalities": ["text", "image"]}
+        fields = deepcopy(generation.get("request_fields") or fields)
         try:
             refs = [
                 prepare_reference(root, ref, info) for ref in generation["references"]
@@ -131,9 +140,8 @@ class ImageClient:
                     response = client.post(
                         self.base + "/chat/completions",
                         json={
-                            "model": generation["model"],
+                            **fields,
                             "messages": [{"role": "user", "content": content}],
-                            "modalities": ["text", "image"],
                         },
                     )
                 elif refs:

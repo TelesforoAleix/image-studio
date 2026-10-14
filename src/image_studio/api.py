@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from functools import wraps
 
 from flask import Blueprint, current_app, jsonify, request, send_file
@@ -56,7 +57,11 @@ def transaction(function):
 
 def serial(row):
     return {
-        key: value.isoformat() if isinstance(value, datetime) else value
+        key: value.isoformat()
+        if isinstance(value, datetime)
+        else float(value)
+        if isinstance(value, Decimal)
+        else value
         for key, value in row.items()
     }
 

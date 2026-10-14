@@ -136,7 +136,9 @@ def prove(request, wait, upload):
             status=201,
         )
         done = wait(run["generations"][0]["id"])
-        assert [r["hash"] for r in done["references"]] == expected
+        assert [r["hash"] for r in done["references"]] == expected[2:3] + expected[
+            :2
+        ] + expected[3:]
         snapshots.append(done)
     request(
         f"/api/variants/{frames[0]['id']}",
@@ -150,9 +152,9 @@ def prove(request, wait, upload):
         status=201,
     )
     ticked = wait(run["generations"][0]["id"])
-    assert [r["hash"] for r in ticked["references"]] == expected[:3] + [
+    assert [r["hash"] for r in ticked["references"]] == expected[2:3] + [
         original["hash"]
-    ] + expected[3:]
+    ] + expected[:2] + expected[3:]
     assert [
         r["hash"]
         for r in request(f"/api/variants/{frames[1]['id']}/preview")["references"]

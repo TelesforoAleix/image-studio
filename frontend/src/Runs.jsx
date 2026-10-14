@@ -260,7 +260,30 @@ export function Runs({
                     <summary>
                       {g.model_info.display_name} · {g.count} outputs
                     </summary>
-                    <pre>{JSON.stringify(g.model_info, null, 2)}</pre>
+                    <p>Shared content</p>
+                    <pre>{g.assembled_prompt}</pre>
+                    <p>Rendered prompt ({g.prompt_family || "legacy"})</p>
+                    <pre>{g.rendered_prompt || g.assembled_prompt}</pre>
+                    <p>Prompt as sent{g.edited ? " (edited)" : ""}</p>
+                    <pre>{g.prompt}</pre>
+                    <p>
+                      Estimated cost:{" "}
+                      {g.estimated_cost == null
+                        ? "Unavailable for past run"
+                        : `$${g.estimated_cost}`}
+                    </p>
+                    <pre>
+                      {JSON.stringify(
+                        {
+                          settings: g.settings,
+                          request_fields: g.request_fields,
+                          model_info: g.model_info,
+                        },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                    <References references={g.references} />
                   </details>
                 ))}
                 <References references={run.references} />

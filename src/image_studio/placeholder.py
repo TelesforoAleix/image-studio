@@ -82,12 +82,85 @@ for model in MODELS:
         "prompt_family": "openai",
         "price_per_image": {"default": 0},
         "price_checked": "2026-10-14",
+        "aspect_ratios": {
+            "field": "size",
+            "values": {"1:1": "1024x1024", "3:2": "1536x1024"},
+        },
         **model["model_info"],
     }
 MODELS[3]["model_info"]["prompt_family"] = "gemini"
 
+# Keep earlier proof models; add priced profile machinery to the two route shapes.
+MODELS[0]["model_info"].update(
+    aspect_ratios={"field": "size", "values": {"1:1": "1024x1024", "3:2": "1536x1024"}},
+    qualities={"field": "quality", "values": ["low", "high", "auto"]},
+    price_per_image={"low": 0.01, "high": 0.05},
+    price_per_reference=0.002,
+    price_estimated=True,
+    max_prompt_chars=32000,
+    advanced=[
+        {
+            "name": "background",
+            "type": "string",
+            "values": ["auto", "opaque", "transparent"],
+            "default": "auto",
+        },
+        {
+            "name": "output_compression",
+            "type": "integer",
+            "range": [0, 100],
+            "default": 100,
+        },
+    ],
+)
+MODELS[3]["model_info"].update(
+    aspect_ratios={
+        "field": "providerOptions.google.imageConfig.aspectRatio",
+        "values": ["1:1", "3:2", "16:9"],
+    },
+    resolutions={
+        "field": "providerOptions.google.imageConfig.imageSize",
+        "values": ["1K", "2K", "4K"],
+    },
+    reference_slots={"character": 4, "object": 10},
+    max_prompt_chars=32000,
+    price_per_image={"1K": 0.03, "2K": 0.05, "4K": 0.11},
+    price_estimated=True,
+    advanced=[
+        {
+            "name": "reasoning_effort",
+            "type": "string",
+            "values": ["minimal", "medium", "high"],
+            "default": "medium",
+        }
+    ],
+)
+MODELS.append(
+    {
+        "model_name": "placeholder-sizes",
+        "model_info": {
+            **MODELS[1]["model_info"],
+            "display_name": "Placeholder sizes — not a real model",
+            "sizes": [
+                {
+                    "value": "1024x1024",
+                    "aspect_ratio": "1:1",
+                    "resolution": "1K",
+                    "price": 0.02,
+                },
+                {
+                    "value": "1536x1024",
+                    "aspect_ratio": "3:2",
+                    "resolution": "1K",
+                    "price": 0.04,
+                },
+            ],
+        },
+    }
+)
 
-def draw_placeholder(model, prompt, references):
+
+def draw_placeholder(model, prompt, references, fields=None):
     image = Image.new("RGB", (960, 640), "#f7f8f5")
     draw = ImageDraw.Draw(image)
     draw.rectangle((30, 30, 930, 610), outline="#40552e", width=3)
@@ -107,6 +180,7 @@ def draw_placeholder(model, prompt, references):
     metadata = PngInfo()
     metadata.add_text("trial", uuid.uuid4().hex)
     metadata.add_text("received_sizes", json.dumps(references))
+    metadata.add_text("received_fields", json.dumps(fields or {}))
     image.save(output, format="PNG", pnginfo=metadata)
     return base64.b64encode(output.getvalue()).decode()
 
@@ -170,7 +244,10 @@ def create_placeholder():
         if not isinstance(prompt, str):
             return jsonify(error="Supply prompt as text"), 400
         time.sleep(model["model_info"]["seconds_per_image"])
-        output = draw_placeholder(model["model_info"], prompt, sizes)
+        received = dict(body)
+        if chat:
+            received["messages"] = [{"role": "user", "content": [content[0]]}]
+        output = draw_placeholder(model["model_info"], prompt, sizes, received)
         if chat:
             return jsonify(
                 choices=[
@@ -191,3 +268,6 @@ def create_placeholder():
         return jsonify(data=[{"b64_json": output}])
 
     return app
+
+
+MODELS[-1]["model_info"].pop("aspect_ratios", None)

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { ModelRequests } from "./ModelRequests";
 import { ModelCost } from "./ModelCost";
 
 export function ModelPicker({
@@ -36,7 +37,8 @@ export function ModelPicker({
             {m.model_info.placeholder && (
               <span className="badge">Placeholder</span>
             )}{" "}
-            <ModelCost info={m.model_info} /> · accepts {m.model_info.max_references} references ·{" "}
+            <ModelCost info={m.model_info} /> · accepts{" "}
+            {m.model_info.max_references} references ·{" "}
             {m.model_info.seconds_per_image == null
               ? "Time unknown"
               : `About ${m.model_info.seconds_per_image} seconds per image`}
@@ -122,7 +124,25 @@ export function History({ path, act, revision, refresh }) {
                   ? "Prompt edited for this generation"
                   : "Assembled prompt"}
               </p>
+              <p>Shared content</p>
+              <pre>{g.assembled_prompt}</pre>
+              <p>Rendered prompt ({g.prompt_family || "legacy"})</p>
+              <pre>{g.rendered_prompt || g.assembled_prompt}</pre>
+              <p>Prompt as sent</p>
               <pre>{g.prompt}</pre>
+              <p>
+                Estimated cost:{" "}
+                {g.estimated_cost == null
+                  ? "Unavailable for past run"
+                  : `$${g.estimated_cost}`}
+              </p>
+              <pre>
+                {JSON.stringify(
+                  { settings: g.settings, request_fields: g.request_fields },
+                  null,
+                  2,
+                )}
+              </pre>
               {g.references.map((r, i) => (
                 <figure key={i}>
                   <img
@@ -147,8 +167,9 @@ export function History({ path, act, revision, refresh }) {
 
 export function ReferenceGeneration({ id, act, busy, refresh, inputRevision }) {
   const [models, setModels] = useState([]);
-  const [model, setModel] = useState("");
-  const [count, setCount] = useState(1);
+  const [choices, setChoices] = useState([]);
+  const [format, setFormat] = useState("1:1");
+  const [rendered, setRendered] = useState(null);
   const [preview, setPreview] = useState(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -168,31 +189,27 @@ export function ReferenceGeneration({ id, act, busy, refresh, inputRevision }) {
         onSubmit={(e) => {
           e.preventDefault();
           act(async () => {
-            await api(`/assets/${id}/generations`, "POST", { model, count });
+            await api(`/assets/${id}/generations`, "POST", choices[0]);
             setRevision((n) => n + 1);
           });
         }}
       >
-        <ModelPicker
-          {...{ models, model, setModel, count, setCount }}
-          references={preview?.references.length || 0}
+        <ModelRequests
+          {...{
+            models,
+            choices,
+            setChoices,
+            format,
+            setFormat,
+            busy,
+            revision,
+          }}
+          content={preview?.prompt}
+          references={preview?.references || []}
+          onPreview={setRendered}
+          limit={1}
         />
-        {preview && (
-          <details>
-            <summary>Reference-view prompt</summary>
-            <pre>{preview.prompt}</pre>
-          </details>
-        )}
-        <button
-          disabled={
-            busy ||
-            !model ||
-            !preview ||
-            preview.references.length >
-              (models.find((m) => m.model_name === model)?.model_info
-                .max_references ?? 0)
-          }
-        >
+        <button disabled={busy || !rendered || choices.length !== 1}>
           Generate reference views
         </button>
       </form>
