@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
+import { Feedback } from "./Feedback";
 import { ModelCost } from "./ModelCost";
 
 function Badges({ info }) {
@@ -216,14 +217,64 @@ export function Runs({
       );
       if (refresh) await refresh();
     });
+  const saveFeedback = (id, output, feedback) =>
+    setRuns((old) =>
+      old.map((run) => ({
+        ...run,
+        generations: run.generations.map((g) =>
+          g.id === id
+            ? {
+                ...g,
+                feedback: g.feedback.map((f, i) =>
+                  i === output ? feedback : f,
+                ),
+              }
+            : g,
+        ),
+      })),
+    );
+  const tallies = {};
+  runs.forEach((r) =>
+    r.generations.forEach((g) => {
+      const tally = (tallies[g.model] ||= {
+        name: g.model_info.display_name,
+        rated: 0,
+        good: 0,
+      });
+      g.feedback.forEach((f) => {
+        tally.rated += f.verdict !== null ? 1 : 0;
+        tally.good += f.verdict === "good" ? 1 : 0;
+      });
+    }),
+  );
+  const finalGeneration = runs
+    .flatMap((r) => r.generations)
+    .find((g) => g.id === final?.generation_id);
   return (
     <>
+      {!runId && (
+        <div className="actions feedback-tally" aria-label="Feedback per model">
+          {Object.entries(tallies).map(([model, tally]) => (
+            <small key={model}>
+              {tally.name}: {tally.rated} rated · {tally.good} good
+            </small>
+          ))}
+        </div>
+      )}
       {!runId && final && (
         <div className="panel final-image">
           <h3>Final image</h3>
-          <a href={`/api/files/${final.hash}`} target="_blank" rel="noreferrer">
+          <a href={`#output/${final.generation_id}/${final.output}`}>
             <img src={`/api/files/${final.hash}`} alt="Selected final image" />
           </a>
+          {finalGeneration && (
+            <Feedback
+              generation={finalGeneration}
+              output={final.output}
+              {...{ act, busy }}
+              saved={(f) => saveFeedback(finalGeneration.id, final.output, f)}
+            />
+          )}
           <button
             disabled={busy}
             onClick={() =>
@@ -337,16 +388,17 @@ export function Runs({
                           )}
                           {g.outputs.map((hash, output) => (
                             <figure key={`${g.id}-${output}`}>
-                              <a
-                                href={`/api/files/${hash}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
+                              <a href={`#output/${g.id}/${output}`}>
                                 <img
                                   src={`/api/files/${hash}`}
                                   alt={`${g.model_info.display_name}, output ${output + 1}`}
                                 />
                               </a>
+                              <Feedback
+                                generation={g}
+                                {...{ output, act, busy }}
+                                saved={(f) => saveFeedback(g.id, output, f)}
+                              />
                               {g.state === "done" && (
                                 <button
                                   disabled={busy}

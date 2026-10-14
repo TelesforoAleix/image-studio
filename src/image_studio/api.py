@@ -109,6 +109,7 @@ def images_for(connection, identifier):
             image["lineage"] = (
                 {
                     "generation_id": generation["id"],
+                    "output": generation["outputs"].index(image["hash"]),
                     "originals": generation["references"],
                 }
                 if generation

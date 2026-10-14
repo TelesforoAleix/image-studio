@@ -62,6 +62,7 @@ def prove(request, wait, upload):
     candidate = next(i for i in garment["images"] if i["source"] == "generated")
     assert candidate["lineage"] == {
         "generation_id": generated["id"],
+        "output": 0,
         "originals": generated["references"],
     }
     assert [r["hash"] for r in candidate["lineage"]["originals"]] == [
@@ -256,7 +257,7 @@ def prove(request, wait, upload):
         == candidate["lineage"]
     )
     exported = package(path)
-    assert exported["format_version"] == 3 and exported["style"]["id"] == style["id"]
+    assert exported["format_version"] == 4 and exported["style"]["id"] == style["id"]
     assert exported["asset_pack"][0]["asset"]["type"] == "person"
     assert exported["asset_pack"][0]["asset"]["preserve"] == person["preserve"]
     aexport = package(f"/api/assets/{garment['id']}")

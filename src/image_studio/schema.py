@@ -189,3 +189,18 @@ image_models = Table(
         "read_at", DateTime(timezone=True), nullable=False, server_default=func.now()
     ),
 )
+
+output_feedback = Table(
+    "output_feedback",
+    metadata,
+    Column("generation_id", ForeignKey("generations.id"), primary_key=True),
+    Column("output_index", Integer, primary_key=True),
+    Column("verdict", Text),
+    Column("asset_ratings", JSONB, nullable=False, server_default="[]"),
+    Column("note", Text, nullable=False, server_default=""),
+    Column(
+        "updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
+    CheckConstraint("output_index BETWEEN 0 AND 3", name="feedback_output_index"),
+    CheckConstraint("verdict IN ('good', 'not_good')", name="feedback_verdict"),
+)

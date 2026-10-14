@@ -118,8 +118,12 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                     key={image.id}
                   >
                     <a
-                      href={`/api/files/${image.hash}`}
-                      target="_blank"
+                      href={
+                        image.lineage
+                          ? `#output/${image.lineage.generation_id}/${image.lineage.output}`
+                          : `/api/files/${image.hash}`
+                      }
+                      target={image.lineage ? undefined : "_blank"}
                       rel="noreferrer"
                     >
                       <img
@@ -149,7 +153,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                             <a
                               key={index}
                               href={`/api/files/${ref.hash}`}
-                              target="_blank"
+                              target={image.lineage ? undefined : "_blank"}
                               rel="noreferrer"
                             >
                               <img
