@@ -46,31 +46,6 @@ export function AssetPage({ id, projects, act, changed, busy }) {
         <button disabled={busy}>Save asset</button>
       </form>
       <div className="panel">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget;
-            const body = new FormData(form);
-            act(async () => {
-              setAsset(await api(`/assets/${id}/images`, "POST", body));
-              form.reset();
-              changed("Images uploaded.");
-            });
-          }}
-        >
-          <label>
-            Upload images
-            <input
-              type="file"
-              name="files"
-              multiple
-              required
-              accept="image/jpeg,image/png,image/webp"
-            />
-          </label>
-          <p>JPEG, PNG or WebP. Up to 25 MB per file and 90 MB per request.</p>
-          <button disabled={busy}>Upload selected images</button>
-        </form>
         <label>
           <input
             type="checkbox"
@@ -105,6 +80,35 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                 Uploads are sent only when ticked. Approve one to use it as a
                 reference by default.
               </p>
+            )}
+            {title === "Originals" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget;
+                  const body = new FormData(form);
+                  act(async () => {
+                    setAsset(await api(`/assets/${id}/images`, "POST", body));
+                    form.reset();
+                    changed("Images uploaded.");
+                  });
+                }}
+              >
+                <label>
+                  Upload images
+                  <input
+                    type="file"
+                    name="files"
+                    multiple
+                    required
+                    accept="image/jpeg,image/png,image/webp"
+                  />
+                </label>
+                <p>
+                  JPEG, PNG or WebP. Up to 25 MB per file and 90 MB per request.
+                </p>
+                <button disabled={busy}>Upload selected images</button>
+              </form>
             )}
             {images.length ? (
               <div className="image-grid">
