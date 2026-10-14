@@ -24,7 +24,10 @@ generation_client = package_client
 def unpack(data):
     with ZipFile(io.BytesIO(data)) as archive:
         package = json.loads(archive.read("manifest.json"))
-        assert package["format_version"] == 1 and package["exported_at"]
+        assert package["format_version"] == (
+            2 if package["format"] == "image-studio-composition" else 1
+        )
+        assert package["exported_at"]
         assert set(archive.namelist()) == {"manifest.json"} | {
             f["filename"] for f in package["files"]
         }

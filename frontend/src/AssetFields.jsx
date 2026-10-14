@@ -1,5 +1,5 @@
 import React from "react";
-export function AssetFields({ value, onChange, projects }) {
+export function AssetFields({ value, onChange }) {
   const field = (name, next) => onChange({ ...value, [name]: next });
   return (
     <>
@@ -27,22 +27,6 @@ export function AssetFields({ value, onChange, projects }) {
           onChange={(e) => field("description", e.target.value)}
         />
       </label>
-      <label>
-        Visibility
-        <select
-          value={value.project_id ?? ""}
-          onChange={(e) =>
-            field("project_id", e.target.value ? Number(e.target.value) : null)
-          }
-        >
-          <option value="">Global — every project</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
     </>
   );
 }
@@ -50,11 +34,9 @@ export const blankAsset = () => ({
   name: "",
   type_tag: "",
   description: "",
-  project_id: null,
 });
 export const assetValues = (asset) => ({
   name: asset.name,
   type_tag: asset.type_tag,
   description: asset.description,
-  project_id: asset.project_id,
 });

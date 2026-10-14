@@ -30,7 +30,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
     <section>
       <div className="library-header">
         <h2>{asset.name}</h2>
-        <a href="#library">Back to library</a>
+        <a href="#assets">Back to Assets</a>
       </div>
       <form
         className="panel"
@@ -206,8 +206,8 @@ export function AssetPage({ id, projects, act, changed, busy }) {
         ) : (
           <div className="delete-confirm">
             <p>
-              Delete “{asset.name}” from the library? Its record and images
-              remain stored.
+              Delete “{asset.name}” from Assets? Its record and images remain
+              stored.
             </p>
             <button
               className="danger"
@@ -216,7 +216,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                 act(async () => {
                   await api(`/assets/${id}`, "DELETE");
                   changed("Asset deleted.");
-                  window.location.hash = "library";
+                  window.location.hash = "assets";
                 })
               }
             >

@@ -15,7 +15,10 @@ def package(path):
     data = request(path + "/export.zip")
     with ZipFile(io.BytesIO(data)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
-        assert manifest["format_version"] == 1 and manifest["exported_at"]
+        assert manifest["format_version"] == (
+            2 if manifest["format"] == "image-studio-composition" else 1
+        )
+        assert manifest["exported_at"]
         assert len(archive.namelist()) == 1 + len(manifest["files"])
         assert set(archive.namelist()) == {"manifest.json"} | {
             f["filename"] for f in manifest["files"]
@@ -83,7 +86,6 @@ def main():
             "name": "Synthetic portable asset",
             "type_tag": "object",
             "description": "Synthetic description",
-            "project_id": project["id"],
         },
         status=201,
     )
@@ -104,7 +106,11 @@ def main():
     comp = request(
         f"/api/projects/{project['id']}/compositions",
         "POST",
-        {"name": "Synthetic portable composition", "scene": "Synthetic scene"},
+        {
+            "name": "Synthetic portable composition",
+            "scene": "Synthetic scene",
+            "kind": "storyboard",
+        },
         status=201,
     )
     cpath = f"/api/compositions/{comp['id']}"
@@ -154,7 +160,7 @@ def prove_exports(project, asset, first, comp, frames, done, final):
     current = request(apath + f"/images/{first['id']}", "PATCH", {"approved": False})
     before = counts("studio")
     exported = package(apath)
-    assert exported["asset"] == current
+    assert exported["asset"] == {**current, "project_id": None}
     assert len(exported["asset"]["images"]) == 3
     assert [i["approved"] for i in exported["asset"]["images"]] == [False, False, True]
     assert counts("studio") == before
@@ -175,7 +181,7 @@ def prove_exports(project, asset, first, comp, frames, done, final):
     assert asset["id"] not in [a["id"] for a in request("/api/assets")]
     deleted = request(apath + "?include_deleted=true")
     before = counts("studio")
-    assert package(apath)["asset"] == deleted
+    assert package(apath)["asset"] == {**deleted, "project_id": None}
     complete = package(cpath)
     assert complete["project"] == project
     assert complete["composition"]["scene"] == comp["scene"]

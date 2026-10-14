@@ -173,7 +173,15 @@ export function PinnedReferences({ draft, setDraft, current }) {
   );
 }
 
-export function Runs({ variantId, act, busy, revision, reuse }) {
+export function Runs({
+  variantId,
+  act,
+  busy,
+  revision,
+  reuse,
+  runId,
+  refresh,
+}) {
   const [runs, setRuns] = useState([]);
   const [final, setFinal] = useState(null);
   useEffect(() => {
@@ -199,17 +207,18 @@ export function Runs({ variantId, act, busy, revision, reuse }) {
     };
   }, [variantId, revision]);
   const choose = (g, output) =>
-    act(async () =>
+    act(async () => {
       setFinal(
         await api(`/variants/${variantId}/final`, "PUT", {
           generation_id: g.id,
           output,
         }),
-      ),
-    );
+      );
+      if (refresh) await refresh();
+    });
   return (
     <>
-      {final && (
+      {!runId && final && (
         <div className="panel final-image">
           <h3>Final image</h3>
           <a href={`/api/files/${final.hash}`} target="_blank" rel="noreferrer">
@@ -218,119 +227,124 @@ export function Runs({ variantId, act, busy, revision, reuse }) {
           <button
             disabled={busy}
             onClick={() =>
-              act(async () =>
-                setFinal(await api(`/variants/${variantId}/final`, "DELETE")),
-              )
+              act(async () => {
+                setFinal(await api(`/variants/${variantId}/final`, "DELETE"));
+                if (refresh) await refresh();
+              })
             }
           >
             Clear final
           </button>
         </div>
       )}
-      {runs.map((run) => {
-        const originals = run.generations.filter((g) => !g.retry_of);
-        return (
-          <article className="panel" key={run.run_id}>
-            <div className="actions">
-              <h3>Run · {new Date(run.created_at).toLocaleString()}</h3>
-              <button disabled={busy} onClick={() => reuse(run)}>
-                Reuse settings
-              </button>
-            </div>
-            <details>
-              <summary>Run snapshot</summary>
-              <p>{run.edited ? "Edited prompt" : "Assembled prompt"}</p>
-              <pre>{run.prompt}</pre>
-              {originals.map((g) => (
-                <details key={g.id}>
-                  <summary>
-                    {g.model_info.display_name} · {g.count} outputs
-                  </summary>
-                  <pre>{JSON.stringify(g.model_info, null, 2)}</pre>
-                </details>
-              ))}
-              <References references={run.references} />
-            </details>
-            <div
-              className="run-columns"
-              style={{ "--columns": originals.length }}
-            >
-              {originals.map((original) => (
-                <div className="model-column" key={original.id}>
-                  <h3>{original.model_info.display_name}</h3>
-                  <Badges info={original.model_info} />
-                  {run.generations
-                    .filter((g) => g.model === original.model)
-                    .map((g) => (
-                      <div className="attempt" key={g.id}>
-                        <p>
-                          {g.retry_of
-                            ? `Retry of generation ${g.retry_of} · `
-                            : ""}
-                          {g.state} · {g.outputs.length}/{g.count}
-                        </p>
-                        {g.error && <p className="error">{g.error}</p>}
-                        {g.state === "failed" && (
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              act(async () => {
-                                const retry = await api(
-                                  `/generations/${g.id}/retry`,
-                                  "POST",
-                                );
-                                setRuns((old) =>
-                                  old.map((r) =>
-                                    r.run_id === run.run_id
-                                      ? {
-                                          ...r,
-                                          generations: [
-                                            ...r.generations,
-                                            retry,
-                                          ],
-                                        }
-                                      : r,
-                                  ),
-                                );
-                              })
-                            }
-                          >
-                            Retry
-                          </button>
-                        )}
-                        {g.outputs.map((hash, output) => (
-                          <figure key={`${g.id}-${output}`}>
-                            <a
-                              href={`/api/files/${hash}`}
-                              target="_blank"
-                              rel="noreferrer"
+      {runs
+        .filter((run) => !runId || run.run_id === runId)
+        .map((run) => {
+          const originals = run.generations.filter((g) => !g.retry_of);
+          return (
+            <article className="panel" key={run.run_id}>
+              <div className="actions">
+                <h3>Run · {new Date(run.created_at).toLocaleString()}</h3>
+                {!runId && (
+                  <button disabled={busy} onClick={() => reuse(run)}>
+                    Reuse settings
+                  </button>
+                )}
+              </div>
+              <details>
+                <summary>Run snapshot</summary>
+                <p>{run.edited ? "Edited prompt" : "Assembled prompt"}</p>
+                <pre>{run.prompt}</pre>
+                {originals.map((g) => (
+                  <details key={g.id}>
+                    <summary>
+                      {g.model_info.display_name} · {g.count} outputs
+                    </summary>
+                    <pre>{JSON.stringify(g.model_info, null, 2)}</pre>
+                  </details>
+                ))}
+                <References references={run.references} />
+              </details>
+              <div
+                className="run-columns"
+                style={{ "--columns": originals.length }}
+              >
+                {originals.map((original) => (
+                  <div className="model-column" key={original.id}>
+                    <h3>{original.model_info.display_name}</h3>
+                    <Badges info={original.model_info} />
+                    {run.generations
+                      .filter((g) => g.model === original.model)
+                      .map((g) => (
+                        <div className="attempt" key={g.id}>
+                          <p>
+                            {g.retry_of
+                              ? `Retry of generation ${g.retry_of} · `
+                              : ""}
+                            {g.state} · {g.outputs.length}/{g.count}
+                          </p>
+                          {g.error && <p className="error">{g.error}</p>}
+                          {g.state === "failed" && (
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                act(async () => {
+                                  const retry = await api(
+                                    `/generations/${g.id}/retry`,
+                                    "POST",
+                                  );
+                                  setRuns((old) =>
+                                    old.map((r) =>
+                                      r.run_id === run.run_id
+                                        ? {
+                                            ...r,
+                                            generations: [
+                                              ...r.generations,
+                                              retry,
+                                            ],
+                                          }
+                                        : r,
+                                    ),
+                                  );
+                                })
+                              }
                             >
-                              <img
-                                src={`/api/files/${hash}`}
-                                alt={`${g.model_info.display_name}, output ${output + 1}`}
-                              />
-                            </a>
-                            {g.state === "done" && (
-                              <button
-                                disabled={busy}
-                                onClick={() => choose(g, output)}
+                              Retry
+                            </button>
+                          )}
+                          {g.outputs.map((hash, output) => (
+                            <figure key={`${g.id}-${output}`}>
+                              <a
+                                href={`/api/files/${hash}`}
+                                target="_blank"
+                                rel="noreferrer"
                               >
-                                {final?.generation_id === g.id &&
-                                final.output === output
-                                  ? "Final"
-                                  : "Mark final"}
-                              </button>
-                            )}
-                          </figure>
-                        ))}
-                      </div>
-                    ))}
-                </div>
-              ))}
-            </div>
-          </article>
-        );
-      })}
+                                <img
+                                  src={`/api/files/${hash}`}
+                                  alt={`${g.model_info.display_name}, output ${output + 1}`}
+                                />
+                              </a>
+                              {g.state === "done" && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() => choose(g, output)}
+                                >
+                                  {final?.generation_id === g.id &&
+                                  final.output === output
+                                    ? "Final"
+                                    : "Mark final"}
+                                </button>
+                              )}
+                            </figure>
+                          ))}
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            </article>
+          );
+        })}
       {!runs.length && <p>No runs yet.</p>}
     </>
   );

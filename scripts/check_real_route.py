@@ -16,7 +16,7 @@ def main():
     asset = request(
         "/api/assets",
         "POST",
-        {"name": "Synthetic route references", "project_id": project["id"]},
+        {"name": "Synthetic route references"},
         status=201,
     )
     originals = []

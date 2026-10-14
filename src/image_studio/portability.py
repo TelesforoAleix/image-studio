@@ -45,13 +45,14 @@ def snapshot(function):
 def manifest(kind):
     return {
         "format": f"image-studio-{kind}",
-        "format_version": 1,
+        "format_version": 2 if kind == "composition" else 1,
         "exported_at": datetime.now(UTC).isoformat(),
     }
 
 
 def asset_record(connection, identifier, *, hashes=None, image_ids=()):
     record = serial(get_row(connection, assets, identifier, deleted=True))
+    record["project_id"] = None
     record["images"] = [
         image
         for image in images_for(connection, identifier)
@@ -86,7 +87,11 @@ def asset_manifest(connection, identifier):
 def composition_manifest(connection, identifier):
     comp = get_row(connection, compositions, identifier)
     result = manifest("composition")
-    result["project"] = serial(get_row(connection, projects, comp["project_id"]))
+    result["project"] = (
+        serial(get_row(connection, projects, comp["project_id"]))
+        if comp["project_id"] is not None
+        else None
+    )
     result["composition"] = serial(comp)
     result["frames"] = []
     hashes = set()

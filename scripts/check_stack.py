@@ -92,7 +92,7 @@ def main():
         },
         status=201,
     )
-    assert asset["project_id"] is None
+    assert "project_id" not in asset
     path = f"/api/assets/{asset['id']}"
     originals = [synthetic_png("red"), synthetic_png("blue")]
     body, content_type = multipart(

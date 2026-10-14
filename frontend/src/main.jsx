@@ -6,12 +6,11 @@ import { Storage } from "./Storage";
 import { Library } from "./Library";
 import { AssetPage } from "./AssetPage";
 import { ProjectForm } from "./ProjectForm";
-import { ProjectPage, CompositionPage } from "./Composition";
+import { CompositionPage } from "./Composition";
+import { ProjectPage, Compositions } from "./Compositions";
 
 function App() {
-  const [route, setRoute] = useState(
-    window.location.hash.slice(1) || "library",
-  );
+  const [route, setRoute] = useState(window.location.hash.slice(1) || "assets");
   const [projects, setProjects] = useState([]);
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
@@ -38,7 +37,7 @@ function App() {
   };
   useEffect(() => {
     const navigate = () => {
-      setRoute(window.location.hash.slice(1) || "library");
+      setRoute(window.location.hash.slice(1) || "assets");
       setError("");
       setMessage("");
     };
@@ -49,8 +48,24 @@ function App() {
     act(async () => setProjects(await api("/projects")), false);
   }, [revision]);
   const projectMatch = /^project\/(\d+)$/.exec(route);
-  const compositionMatch = /^composition\/(\d+)$/.exec(route);
+  const compositionMatch =
+    /^composition\/(\d+)(?:\/frame\/(\d+)\/(setup|generate|history))?$/.exec(
+      route,
+    );
   const frameMatch = /^frame\/(\d+)$/.exec(route);
+  useEffect(() => {
+    if (route === "library") window.location.replace("#assets");
+    if (frameMatch)
+      act(async () => {
+        const frame = await api(`/variants/${frameMatch[1]}`);
+        if (frame.deleted_at) throw new Error("This frame has been deleted.");
+        window.location.replace(
+          `#composition/${frame.composition_id}/frame/${frame.id}/setup`,
+        );
+      }, false);
+  }, [route]);
+  const assetFilter =
+    new URLSearchParams(route.split("?")[1] || "").get("used_by_project") || "";
   const assetMatch = /^asset\/(\d+)$/.exec(route);
   return (
     <main>
@@ -63,10 +78,22 @@ function App() {
         </h1>
         <nav aria-label="Workspace">
           <a
-            href="#library"
-            aria-current={route === "library" ? "page" : undefined}
+            href="#assets"
+            aria-current={
+              route.startsWith("assets") || assetMatch ? "page" : undefined
+            }
           >
-            Library
+            Assets
+          </a>
+          <a
+            href="#compositions"
+            aria-current={
+              route === "compositions" || compositionMatch || frameMatch
+                ? "page"
+                : undefined
+            }
+          >
+            Compositions
           </a>
           <a
             href="#projects"
@@ -75,6 +102,7 @@ function App() {
             Projects
           </a>
           <a
+            className="secondary-link"
             href="#storage"
             aria-current={route === "storage" ? "page" : undefined}
           >
@@ -112,9 +140,12 @@ function App() {
             </p>
           ))}
         </section>
+      ) : route === "compositions" ? (
+        <Compositions {...{ projects, act, busy }} />
       ) : projectMatch ? (
         <ProjectPage
           key={projectMatch[1]}
+          projects={projects}
           id={projectMatch[1]}
           act={act}
           changed={changed}
@@ -124,13 +155,9 @@ function App() {
         <CompositionPage
           key={compositionMatch[1]}
           id={compositionMatch[1]}
-          act={act}
-          busy={busy}
-        />
-      ) : frameMatch ? (
-        <CompositionPage
-          key={`frame-${frameMatch[1]}`}
-          frameId={frameMatch[1]}
+          frameId={compositionMatch[2]}
+          tab={compositionMatch[3]}
+          projects={projects}
           act={act}
           busy={busy}
         />
@@ -146,6 +173,7 @@ function App() {
       ) : (
         <Library
           projects={projects}
+          projectFilter={assetFilter}
           act={act}
           revision={revision}
           busy={busy}

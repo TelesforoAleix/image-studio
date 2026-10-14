@@ -56,7 +56,6 @@ def main():
             {
                 "name": f"Synthetic subject {i}",
                 "description": "Synthetic description",
-                "project_id": project["id"] if i else None,
             },
             status=201,
         )

@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from flask import Blueprint, Response, current_app, jsonify, request
-from sqlalchemy import func, insert, or_, select, update
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
 
@@ -67,10 +67,6 @@ def selected_assets(connection, comp):
     result = []
     for selection in rows:
         asset = get_row(connection, assets, selection["asset_id"])
-        if asset["project_id"] not in (None, comp["project_id"]):
-            raise Conflict(
-                f"Asset {asset['name']} is no longer visible to this project; remove it"
-            )
         result.append((asset, selection, images_for(connection, asset["id"])))
     return result
 
@@ -119,7 +115,7 @@ def selected_final(connection, variant):
 def variant_preview(connection, identifier):
     variant = live_variant(connection, identifier)
     comp = composition(connection, variant["composition_id"])
-    project = get_row(connection, projects, comp["project_id"])
+    project = composition_project(connection, comp)
     return assemble(project, comp, selected_assets(connection, comp), variant)
 
 
@@ -184,6 +180,94 @@ def models(connection):
     return jsonify(model_list(connection))
 
 
+def composition_project(connection, comp):
+    return (
+        get_row(connection, projects, comp["project_id"])
+        if comp["project_id"] is not None
+        else None
+    )
+
+
+def composition_fields(connection, value):
+    text_fields(value, ["name", "scene", "direction"])
+    if "kind" in value and value["kind"] not in ("single", "storyboard"):
+        raise BadRequest("kind must be single or storyboard")
+    if "project_id" in value and value["project_id"] is not None:
+        identifier = value["project_id"]
+        if type(identifier) is not int or not 1 <= identifier <= 2147483647:
+            raise BadRequest("project_id must be a positive integer or null")
+        get_row(connection, projects, identifier)
+    return value
+
+
+def summaries(connection, project_id=None, *, filtered=False):
+    query = select(compositions).where(compositions.c.deleted_at.is_(None))
+    if filtered:
+        query = query.where(compositions.c.project_id == project_id)
+    result = []
+    for row in connection.execute(query).mappings():
+        frames = live_frames(connection, row["id"])
+        finals = [selected_final(connection, frame) for frame in frames]
+        runs = list(
+            connection.execute(
+                select(generations)
+                .where(generations.c.variant_id.in_([f["id"] for f in frames]))
+                .order_by(generations.c.id.desc())
+            ).mappings()
+        )
+        thumbnail = next((f["hash"] for f in finals if f), None)
+        if thumbnail is None:
+            thumbnail = next((g["outputs"][-1] for g in runs if g["outputs"]), None)
+        activity = max(
+            [row["created_at"]]
+            + [g["finished_at"] or g["started_at"] or g["created_at"] for g in runs]
+        )
+        project = composition_project(connection, row)
+        result.append(
+            {
+                **serial(row),
+                "project": serial(project) if project else None,
+                "thumbnail": thumbnail,
+                "last_activity": activity.isoformat(),
+            }
+        )
+    return sorted(result, key=lambda r: (r["last_activity"], r["id"]), reverse=True)
+
+
+def new_composition(connection, value):
+    identifier = connection.execute(
+        insert(compositions).values(**value).returning(compositions.c.id)
+    ).scalar_one()
+    connection.execute(insert(variants).values(composition_id=identifier))
+    return jsonify(detail(connection, identifier)), 201
+
+
+@generation_api.route("/compositions", methods=["GET", "POST"])
+@transaction
+def all_compositions(connection):
+    if request.method == "POST":
+        value = composition_fields(
+            connection,
+            body(
+                ["name", "scene", "direction", "kind", "project_id"], ["name", "kind"]
+            ),
+        )
+        return new_composition(connection, value)
+    if "project_id" not in request.args:
+        return jsonify(summaries(connection))
+    supplied = request.args["project_id"]
+    if supplied == "none":
+        identifier = None
+    elif (
+        supplied.isascii() and supplied.isdecimal() and 1 <= int(supplied) <= 2147483647
+    ):
+        identifier = int(supplied)
+        get_row(connection, projects, identifier)
+    else:
+        raise BadRequest("project_id must be a positive integer or none")
+    return jsonify(summaries(connection, identifier, filtered=True))
+
+
 @generation_api.route(
     "/projects/<int:project_id>/compositions", methods=["GET", "POST"]
 )
@@ -191,27 +275,55 @@ def models(connection):
 def project_compositions(connection, project_id):
     get_row(connection, projects, project_id)
     if request.method == "GET":
-        return jsonify(
-            [
-                serial(r)
-                for r in connection.execute(
-                    select(compositions)
-                    .where(
-                        compositions.c.project_id == project_id,
-                        compositions.c.deleted_at.is_(None),
-                    )
-                    .order_by(compositions.c.id)
-                ).mappings()
-            ]
-        )
-    value = text_fields(body(["name", "scene"], ["name"]), ["name", "scene"])
-    identifier = connection.execute(
-        insert(compositions)
-        .values(project_id=project_id, **value)
-        .returning(compositions.c.id)
+        return jsonify(summaries(connection, project_id, filtered=True))
+    value = composition_fields(
+        connection, body(["name", "scene", "direction", "kind"], ["name"])
+    )
+    return new_composition(connection, {**value, "project_id": project_id})
+
+
+@generation_api.post("/compositions/<int:identifier>/duplicate")
+@transaction
+def duplicate_composition(connection, identifier):
+    original = lock_composition(connection, identifier)
+    values = {
+        k: original[k] for k in ("name", "project_id", "kind", "direction", "scene")
+    }
+    values["name"] += " (copy)"
+    copied = connection.execute(
+        insert(compositions).values(**values).returning(compositions.c.id)
     ).scalar_one()
-    connection.execute(insert(variants).values(composition_id=identifier))
-    return jsonify(detail(connection, identifier)), 201
+    for selection in connection.execute(
+        select(composition_assets)
+        .where(composition_assets.c.composition_id == identifier)
+        .order_by(composition_assets.c.position, composition_assets.c.id)
+    ).mappings():
+        connection.execute(
+            insert(composition_assets).values(
+                composition_id=copied,
+                **{
+                    k: selection[k]
+                    for k in (
+                        "asset_id",
+                        "role",
+                        "position",
+                        "deselected_images",
+                        "active",
+                    )
+                },
+            )
+        )
+    for frame in live_frames(connection, identifier):
+        connection.execute(
+            insert(variants).values(
+                composition_id=copied,
+                **{
+                    k: frame[k]
+                    for k in ("name", "instructions", "position", "deselected_images")
+                },
+            )
+        )
+    return jsonify(detail(connection, copied)), 201
 
 
 @generation_api.route(
@@ -219,7 +331,7 @@ def project_compositions(connection, project_id):
 )
 @transaction
 def edit_composition(connection, identifier):
-    composition(connection, identifier)
+    lock_composition(connection, identifier)
     if request.method == "DELETE":
         connection.execute(
             update(compositions)
@@ -228,7 +340,14 @@ def edit_composition(connection, identifier):
         )
         return jsonify(deleted=True)
     if request.method == "PATCH":
-        value = text_fields(body(["name", "scene"]), ["name", "scene"])
+        value = composition_fields(
+            connection, body(["name", "scene", "direction", "kind", "project_id"])
+        )
+        if (
+            value.get("kind") == "single"
+            and len(live_frames(connection, identifier)) != 1
+        ):
+            raise Conflict("A single composition must have exactly one live frame")
         if value:
             connection.execute(
                 update(compositions)
@@ -241,10 +360,8 @@ def edit_composition(connection, identifier):
 @generation_api.put("/compositions/<int:identifier>/assets/<int:asset_id>")
 @transaction
 def select_asset(connection, identifier, asset_id):
-    comp = composition(connection, identifier)
-    asset = get_row(connection, assets, asset_id)
-    if asset["project_id"] not in (None, comp["project_id"]):
-        raise BadRequest("Asset is not visible to this project")
+    composition(connection, identifier)
+    get_row(connection, assets, asset_id)
     value = text_fields(body(["role", "deselected_images"], ["role"]), ["role"])
     if not value["role"].strip():
         raise BadRequest("role must not be empty")
@@ -296,7 +413,11 @@ def remove_asset(connection, identifier, asset_id):
 @generation_api.post("/compositions/<int:identifier>/variants")
 @transaction
 def add_frame(connection, identifier):
-    lock_composition(connection, identifier)
+    comp = lock_composition(connection, identifier)
+    if comp["kind"] != "storyboard":
+        raise Conflict(
+            "Turn this single composition into a storyboard before adding frames"
+        )
     value = text_fields(body(["name", "instructions"]), ["name", "instructions"])
     rows = list(
         connection.execute(
@@ -443,16 +564,17 @@ def preview(connection, identifier):
     if request.method == "GET":
         return jsonify(variant_preview(connection, identifier))
     value = text_fields(
-        body(["scene", "instructions"], ["scene", "instructions"]),
-        ["scene", "instructions"],
+        body(["direction", "scene", "instructions"], ["scene", "instructions"]),
+        ["direction", "scene", "instructions"],
     )
     variant = dict(live_variant(connection, identifier))
     comp = dict(composition(connection, variant["composition_id"]))
     comp["scene"] = value["scene"]
+    comp["direction"] = value.get("direction", comp["direction"])
     variant["instructions"] = value["instructions"]
     return jsonify(
         assemble(
-            get_row(connection, projects, comp["project_id"]),
+            composition_project(connection, comp),
             comp,
             selected_assets(connection, comp),
             variant,
@@ -581,7 +703,7 @@ def run_choices(value):
     return choices
 
 
-def draft_references(connection, project_id, supplied):
+def draft_references(connection, supplied):
     if not isinstance(supplied, list):
         raise BadRequest("references must be an ordered list")
     result = []
@@ -602,18 +724,13 @@ def draft_references(connection, project_id, supplied):
                 .where(
                     assets.c.id == ref["asset_id"],
                     stored_files.c.hash == ref["hash"],
-                    or_(
-                        assets.c.project_id.is_(None), assets.c.project_id == project_id
-                    ),
                 )
             )
             .mappings()
             .first()
         )
         if row is None:
-            raise BadRequest(
-                "Reference hash must belong to an asset visible to this project"
-            )
+            raise BadRequest("Reference hash must belong to an attached asset image")
         # Never use client-supplied file metadata or asset descriptions.
         result.append(
             {
@@ -657,7 +774,7 @@ def run_detail(connection, variant_id, run_id):
 @transaction
 def variant_runs(connection, identifier):
     variant = get_row(connection, variants, identifier)
-    comp = composition(connection, variant["composition_id"])
+    composition(connection, variant["composition_id"])
     if request.method == "GET":
         run_ids = connection.execute(
             select(generations.c.run_id, func.min(generations.c.id).label("first_id"))
@@ -671,7 +788,7 @@ def variant_runs(connection, identifier):
     choices = run_choices(value)
     # Pinned drafts must work even if the current pack cannot be assembled.
     if "references" in value:
-        refs = draft_references(connection, comp["project_id"], value["references"])
+        refs = draft_references(connection, value["references"])
         prompt = value.get("prompt")
         assembled = prompt
         edited = True

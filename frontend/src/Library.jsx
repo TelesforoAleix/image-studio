@@ -1,19 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { AssetFields, blankAsset } from "./AssetFields";
-export function Library({ projects, act, revision, busy }) {
+export function Library({ projects, act, revision, busy, projectFilter = "" }) {
   const [assets, setAssets] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [tag, setTag] = useState("");
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(projectFilter);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState(blankAsset);
+  useEffect(() => setProject(projectFilter), [projectFilter]);
   useEffect(() => {
     let active = true;
     setLoaded(false);
     const query = new URLSearchParams();
     if (tag) query.set("type_tag", tag);
-    if (project) query.set("project_id", project);
+    if (project) query.set("used_by_project", project);
     act(async () => {
       const result = await api(`/assets?${query}`);
       if (active) {
@@ -28,7 +29,7 @@ export function Library({ projects, act, revision, busy }) {
   return (
     <section aria-labelledby="library-title">
       <div className="library-header">
-        <h2 id="library-title">Asset library</h2>
+        <h2 id="library-title">Assets</h2>
         <button onClick={() => setCreating(!creating)}>
           {creating ? "Close form" : "New asset"}
         </button>
@@ -46,10 +47,10 @@ export function Library({ projects, act, revision, busy }) {
           Project view
           <select value={project} onChange={(e) => setProject(e.target.value)}>
             <option value="">All assets</option>
-            <option value="global">Global only</option>
+
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} + global
+                Used by {p.name}
               </option>
             ))}
           </select>
@@ -90,11 +91,7 @@ export function Library({ projects, act, revision, busy }) {
                 <p>
                   {asset.description || "Add a description and references."}
                 </p>
-                <small>
-                  {asset.project_id === null
-                    ? "Global"
-                    : projects.find((p) => p.id === asset.project_id)?.name}
-                </small>
+                <small>Global</small>
               </a>
             ))}
           </div>

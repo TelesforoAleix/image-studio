@@ -83,7 +83,7 @@ def test_migration_is_idempotent_and_matches_definitions(client):
             connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
             ).scalar_one()
-            == "0005"
+            == "0006"
         )
 
 
@@ -109,39 +109,19 @@ def test_project_routes(client):
     assert c.patch("/api/projects/99999", json={"name": "Missing"}).status_code == 404
 
 
-def test_asset_routes_and_visibility(client):
+def test_asset_routes_are_global(client):
     c, _, _ = client
-    p1 = c.post("/api/projects", json={"name": "Project one"}).json["id"]
-    p2 = c.post("/api/projects", json={"name": "Project two"}).json["id"]
-    global_asset = new_asset(c, type_tag="garment", description="Synthetic description")
-    own = new_asset(c, project_id=p1, type_tag="person")
-    other = new_asset(c, project_id=p2)
-    assert len(c.get("/api/assets").json) == 3
-    assert {a["id"] for a in c.get(f"/api/assets?project_id={p1}").json} == {
-        global_asset["id"],
-        own["id"],
-    }
-    assert {a["id"] for a in c.get(f"/api/assets?project_id={p2}").json} == {
-        global_asset["id"],
-        other["id"],
-    }
-    assert [
-        a["id"] for a in c.get("/api/assets?project_id=global&type_tag=garment").json
-    ] == [global_asset["id"]]
-    assert c.get(f"/api/assets/{own['id']}").json == own
-    edited = c.patch(
-        f"/api/assets/{own['id']}",
-        json={
-            "name": "Edited",
-            "type_tag": "object",
-            "description": "Changed",
-            "project_id": None,
-        },
+    asset = new_asset(c, type_tag="garment", description="Synthetic description")
+    assert "project_id" not in asset
+    assert c.get("/api/assets?type_tag=garment").json == [
+        {k: v for k, v in asset.items() if k != "images"}
+    ]
+    edited = c.patch(f"/api/assets/{asset['id']}", json={"description": "Changed"})
+    assert edited.status_code == 200 and edited.json["description"] == "Changed"
+    assert (
+        c.patch(f"/api/assets/{asset['id']}", json={"project_id": None}).status_code
+        == 400
     )
-    assert edited.status_code == 200
-    assert edited.json["project_id"] is None
-    assert edited.json["description"] == "Changed"
-    assert edited.json["type_tag"] == "object"
     assert c.get("/api/assets/99999").status_code == 404
     assert c.patch("/api/assets/99999", json={}).status_code == 404
 
@@ -183,7 +163,7 @@ def test_upload_duplicate_approvals_delete_and_files(client):
     assert copy_response.status_code == 201
     copy = copy_response.json
     assert copy["name"] == asset["name"] + " (copy)"
-    for key in ("type_tag", "description", "project_id"):
+    for key in ("type_tag", "description"):
         assert copy[key] == asset[key]
     assert [(i["hash"], i["approved"]) for i in copy["images"]] == [
         (i["hash"], i["approved"]) for i in replacement["images"]
@@ -301,7 +281,7 @@ def test_unknown_foreign_keys_images_filters_and_files(client):
     identifier = new_asset(c)["id"]
     assert (
         c.post("/api/assets", json={"name": "Missing", "project_id": 99999}).status_code
-        == 404
+        == 400
     )
     assert (
         c.post(
@@ -316,7 +296,7 @@ def test_unknown_foreign_keys_images_filters_and_files(client):
         "include_deleted=maybe",
     ):
         assert c.get(f"/api/assets?{query}").status_code == 400
-    assert c.get("/api/assets?project_id=99999").status_code == 404
+    assert c.get("/api/assets?used_by_project=99999").status_code == 404
     assert c.get("/api/files/" + "0" * 64).status_code == 404
     assert c.get("/api/files/not-a-hash").status_code == 404
     assert (
@@ -339,9 +319,8 @@ def test_unknown_foreign_keys_images_filters_and_files(client):
     assert upload(c, 99999, (image_bytes(), "missing.png")).status_code == 404
 
 
-def test_duplicate_keeps_project_visibility(client):
+def test_duplicate_remains_global(client):
     c, _, _ = client
-    project = c.post("/api/projects", json={"name": "Synthetic"}).json["id"]
-    asset = new_asset(c, project_id=project)
+    asset = new_asset(c)
     copy = c.post(f"/api/assets/{asset['id']}/duplicate").json
-    assert copy["project_id"] == project
+    assert "project_id" not in copy

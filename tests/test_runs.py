@@ -11,8 +11,6 @@ from alembic.config import Config
 from sqlalchemy import func, select, text, update
 from sqlalchemy.schema import CreateSchema, DropSchema
 from test_api import client as postgres_client
-from test_api import new_asset, upload
-from test_files import image_bytes
 from test_generation_api import generation_client as runs_client
 from test_generation_api import setup_composition
 from werkzeug.exceptions import BadRequest
@@ -175,7 +173,7 @@ def test_compare_retry_final_and_pinned_reuse(generation_client):
 
 def test_run_refusals_and_transaction_rollback(generation_client, monkeypatch):
     c, engine, _ = generation_client
-    project, comp, asset = setup_composition(c)
+    _, comp, _ = setup_composition(c)
     path = f"/api/variants/{comp['variants'][0]['id']}/runs"
     ref = c.get(f"/api/variants/{comp['variants'][0]['id']}/preview").json[
         "references"
@@ -189,14 +187,8 @@ def test_run_refusals_and_transaction_rollback(generation_client, monkeypatch):
     )
     assert refusal.status_code == 400
     assert all(s in refusal.json["error"] for s in ("placeholder-a", "5", "4"))
-    other = c.post("/api/projects", json={"name": "Other"}).json
-    private = new_asset(c, project_id=other["id"])
-    private = upload(
-        c, private["id"], (image_bytes("PNG", "green"), "private.png")
-    ).json
     forbidden = [
         {**ref, "hash": "0" * 64},
-        {**ref, "hash": private["images"][0]["hash"], "asset_id": private["id"]},
         {**ref, "asset_id": True},
         {**ref, "asset_id": 2**50},
         {**ref, "role": None},
