@@ -311,7 +311,9 @@ test("queueing starts run polling and reference history also stops idle", async 
   const state = await mock(page);
   await page.clock.install();
   await page.goto("/#composition/1/frame/1/generate");
+  await page.getByText("+ model", { exact: true }).click();
   await page.getByRole("checkbox", { name: "Synthetic model" }).check();
+  await page.getByText("+ model", { exact: true }).click();
   await page.clock.fastForward(300);
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),

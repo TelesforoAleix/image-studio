@@ -82,10 +82,11 @@ repeated bytes share one stored file. File metadata lives in Postgres.
 
 The top-level sections are **Assets**, **Compositions** and **Projects**; Storage
 is a secondary link. Routes are `#assets`, `#asset/<id>`, `#compositions`,
-`#composition/<id>/frame/<frame-id>/<setup|generate|history>`, `#projects`,
+`#composition/<id>/frame/<frame-id>`, `#projects`,
 `#project/<id>` and `#storage`. `#library` redirects to Assets; `#frame/<id>`
-redirects to that frame's composition Setup tab. Opening `#composition/<id>`
-selects its first live frame and Setup.
+redirects to that frame's composition workspace. Opening `#composition/<id>`
+selects its first live frame. The former `/setup`, `/generate` and `/history`
+suffixes redirect to the same workspace.
 
 A project is a folder with creative direction. Its page lists compact composition
 rows and links to `#assets?used_by_project=<id>` for assets used by its live
@@ -96,14 +97,33 @@ New compositions choose single or storyboard and an optional project. Singles ho
 one live frame. Turn a single into a storyboard to add frames; a storyboard can
 return to single only with one live frame.
 
-The composition header holds name, kind, changeable project, export buttons,
-Duplicate and inline Delete. Storyboards also show ordered frames with final
-thumbnails, selection, add, reorder and inline deletion. One tab is shown at a time:
-Setup edits direction, scene, shared asset pack and selected frame instructions and
-reference toggles; Generate shows per-model rendered/editable prompts, format, priced quality or
-resolution, Advanced settings, cost estimates, pinned reuse and newly queued runs; History shows that frame's runs,
-snapshots, finals, reuse and retry. Reuse opens Generate. Duplicate copies composition
-fields, retained pack selections and live frames without runs, generations or finals.
+The desktop composition workspace keeps instructions beside results, without tabs.
+Its toolbar shows the project/composition/frame breadcrumb, Share exports (naming
+frames skipped without finals), and a menu for duplicate, project move, kind and
+inline deletion. Storyboards have a final-thumbnail filmstrip: drag frames to
+reorder, use the move buttons, or press Alt+Left/Right on a focused frame link.
+
+The left inspector holds compact expandable asset and style rows, a searchable
+asset picker, direction and scene. Text fields save after 450 ms of idle typing,
+with local Saving/Saved feedback; navigation and generation flush pending saves.
+Storyboards also expose frame name/instructions and collapsed frame-only reference
+overrides. Reference totals name each model's total or slot limit when exceeded.
+
+The centre shows one selected run with model columns, progress, retry, finals and
+quick/detailed feedback. The earlier-runs strip changes the shown run without
+navigation. Technical details holds prompts as sent, settings, request fields and
+the complete snapshot. Outputs still link to their existing output pages.
+
+The docked generate bar holds up to three model chips with outputs, priced quality
+and Advanced controls, common format, estimated costs/spend and Generate (also
+Command+Enter or Ctrl+Enter). View prompts opens a side sheet for independent
+per-model edits and references; edited chips are marked. Reuse settings pins the
+shown run's references, content and prompts and loads its model settings. Back to
+current restores the live pack and previous settings. Reopening derives settings
+from the frame's latest run, then the composition's latest run on another frame,
+or starts with no models; edited prompts are only restored by explicit reuse.
+Duplicate copies composition fields, retained pack selections and live frames
+without runs, generations or finals.
 
 The API uses JSON, except multipart uploads with one or more `files` fields:
 
@@ -369,8 +389,9 @@ Reuse settings loads a browser-only pinned draft: the sent prompt as an edit, th
 original models/counts and exact reference files in order. Old files resolve after
 asset edits, deletion or approval changes. References outside the current pack are
 labelled; remove any reference or append current pack images, edit the prompt and
-change models/counts before generating. Back to the current pack restores normal
-assembly. Drafts are not saved until Generate creates a new run. File metadata and
+change models/counts before generating. Back to current restores normal
+assembly and the previous bar settings. Drafts are not saved until Generate creates
+a new run. File metadata and
 asset descriptions are rebuilt on the server; draft hashes must belong to images
 of global assets, including deleted assets. Unknown and unattached files are refused. Each chosen model's licence, price and limit are shown before Generate
 and checked before any row/job is queued; one insufficient limit refuses the run.
@@ -392,8 +413,8 @@ tables and row counts, including these records.
 ## Storyboards
 
 A storyboard's ordered frame strip sits in the composition header. Add frame creates
-Frame N; rename it in Setup. Move up / Move down changes the sequence. Deletion asks
-inline and hides the frame with its runs and final. At least one live frame remains;
+Frame N; rename it in the inspector. Drag, Alt+Left/Right, or Move up / Move down
+changes the sequence. Deletion asks inline and hides the frame with its runs and final. At least one live frame remains;
 generations, finals and immutable files remain readable by ID. Every frame uses one
 shared asset pack and scene, with its own instructions and optional reference
 deselections. Shared edits affect later previews and runs; past snapshots and reused
@@ -533,7 +554,7 @@ proportions. Duplicate copies all these fields and shares immutable files.
 
 A Style is a normal asset with a description, optional preservation rules and
 approved reference images. Choose a style on a project page or a composition's
-Setup tab. A composition's own style replaces its project's; an empty choice uses
+inspector. A composition's own style replaces its project's; an empty choice uses
 the project's style. Only live Style assets appear in the style picker, and Style
 assets cannot be pack subjects. Changing a picked style's type requires clearing
 its choices first; changing a subject to Style requires removing it from packs.
@@ -624,7 +645,8 @@ A `sizes` profile offers its priced size values for the chosen ratio. Advanced
 controls start collapsed and use the profile's defaults, enumerated `values`
 or inclusive integer `range`. Edits and Reset affect one model's prompt.
 Reference-view generation uses the same rendering and setting controls.
-History shows shared content, rendered text, text as sent, ordered references,
+Technical details shows shared content, rendered text, text as sent, ordered
+references,
 settings, request fields and estimated cost. Reuse settings pins reference files,
 shared content, each model's sent prompt, output count and settings into a draft.
 
@@ -685,13 +707,14 @@ Earlier journeys and the dump restore continue in the compose job.
 
 ## Feedback on every output
 
-History and large output pages offer **Good** and **Not good** under each output.
+Workspace results and large output pages offer **Good** and **Not good** under
+each output.
 Click once to set a verdict; click the selected button again to clear it. Feedback
 belongs to the generation and its output index, independently of **Final**.
 **Provide feedback** opens an inline form with an optional verdict, one optional
 **Kept**, **Partly** or **Lost** rating per asset in the generation's saved
 references (including the style), and an optional note. **Save feedback** saves
-explicitly; Cancel discards form edits. History shows each model's rated output
+explicitly; Cancel discards form edits. Results shows each model's rated output
 count and good count for the selected frame, including retries. Nothing is scored.
 
 `PATCH /api/generations/<id>/outputs/<index>/feedback` accepts any nonempty subset
@@ -732,8 +755,8 @@ Both themes prove text contrast of at least 4.5:1 and borders/focus at least 3:1
 
 Buttons default to bordered secondary. Each view has one filled `primary`:
 New/Create asset, Upload selected images, New/Create composition, Create project,
-Create composition on a project, Save instructions in Setup, Generate in Generate,
-Duplicate in History, Provide/Save feedback on an output, and Refresh in Storage.
+Create composition on a project, Generate in the composition workspace,
+Provide/Save feedback on an output, and Refresh in Storage.
 `plain` covers in-place Edit, Reset and reorder actions. `destructive` uses danger
 text; deletion retains its existing inline confirmation.
 
@@ -749,5 +772,10 @@ missing timing metadata leaves elapsed time alone. Waiting names the image servi
 `npm run check` runs Chromium against synthetic intercepted API responses without a
 backend or model calls. It proves route/form primary counts in both themes, token
 contrast, controls during an in-flight poll, polling stop/restart, local action
-pending/errors and announced confirmation expiry. Playwright is an Apache-2.0 dev
+pending/errors and announced confirmation expiry. Workspace proofs cover an iteration
+without
+navigation, per-model prompt edits, finals in results/filmstrip, earlier-run reuse
+and restore, remembered settings, full-set drag/keyboard ordering, reference limits,
+keyboard menus, old-route redirects and autosave flushing/failures. Playwright is
+an Apache-2.0 dev
 dependency; no screenshots, traces, image fixtures or owner records are retained.

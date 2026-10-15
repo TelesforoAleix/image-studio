@@ -1,38 +1,53 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionInput,
-  ActionSelect,
-  ActionTextarea,
-} from "./Actions";
-import React from "react";
+import { ActionButton, ActionInput, ActionTextarea } from "./Actions";
+import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { StylePicker } from "./StylePicker";
 import { Selection } from "./CompositionControls";
+import { PinnedReferences } from "./Runs";
+import { assetTypes } from "./AssetFields";
 
 export function CompositionSetup({
   comp,
-  compName,
-  setCompName,
-  direction,
-  setDirection,
-  scene,
-  setScene,
-  frameName,
-  setFrameName,
-  instructions,
-  setInstructions,
-  act,
-  saveText,
-  available,
-  assetId,
-  setAssetId,
-  role,
-  setRole,
   setComp,
-  saveSelection,
   variant,
+  act,
+  autosave,
+  assets,
+  references,
+  warnings,
+  draft,
+  setDraft,
+  current,
 }) {
+  const [picker, setPicker] = useState(false);
+  const [query, setQuery] = useState("");
+  const [thumbnails, setThumbnails] = useState({});
+  const [pickerError, setPickerError] = useState("");
+  useEffect(() => {
+    if (!picker) return;
+    let active = true;
+    Promise.all(
+      assets
+        .filter((a) => a.type !== "style")
+        .map((a) => api(`/assets/${a.id}`)),
+    )
+      .then((details) => {
+        if (active)
+          setThumbnails(
+            Object.fromEntries(details.map((a) => [a.id, a.images[0]?.hash])),
+          );
+      })
+      .catch((e) => {
+        if (active) setPickerError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [picker, assets]);
+  const patch = (value) =>
+    act(async () =>
+      setComp(await api(`/compositions/${comp.id}`, "PATCH", value)),
+    );
   const selections = [
     ...comp.assets,
     ...(comp.style
@@ -60,189 +75,169 @@ export function CompositionSetup({
         defaultOn: i.approved || s.selected_originals.includes(i.id),
       })),
   );
+  const field = (key, label, rows) => (
+    <label key={key} className="autosave-field">
+      {label}
+      <small role="status">{autosave.status[key] || "Saved"}</small>
+      {rows ? (
+        <ActionTextarea
+          aria-label={label}
+          rows={rows}
+          value={autosave.value[key]}
+          onChange={(e) => autosave.change(key, e.target.value)}
+        />
+      ) : (
+        <ActionInput
+          aria-label={label}
+          required
+          value={autosave.value[key]}
+          onChange={(e) => autosave.change(key, e.target.value)}
+        />
+      )}
+    </label>
+  );
   return (
-    <>
-      <div className="panel">
-        <StylePicker
-          value={comp.style_asset_id}
-          inherit
-          {...{ act }}
-          onChange={(style_asset_id) =>
+    <aside className="inspector" aria-label="Composition inspector">
+      <h3>Asset pack</h3>
+      {comp.assets.map((s) => (
+        <Selection
+          key={s.id}
+          selection={s}
+          save={(next) =>
             act(async () =>
               setComp(
-                await api(`/compositions/${comp.id}`, "PATCH", {
-                  style_asset_id,
-                  style_deselected_images: [],
-                }),
+                await api(
+                  `/compositions/${comp.id}/assets/${s.asset_id}`,
+                  "PUT",
+                  {
+                    role: next.role,
+                    deselected_images: next.deselected_images,
+                    selected_originals: next.selected_originals,
+                  },
+                ),
+              ),
+            )
+          }
+          remove={() =>
+            act(async () =>
+              setComp(
+                await api(
+                  `/compositions/${comp.id}/assets/${s.asset_id}`,
+                  "DELETE",
+                ),
               ),
             )
           }
         />
-        {comp.style && (
-          <>
-            <p>Using {comp.style.name}</p>
-            <div className="reference-toggles">
-              {comp.style.images
-                .filter((i) => i.approved && !i.rejected)
-                .map((i) => (
-                  <label key={i.id}>
-                    <img src={`/api/files/${i.hash}`} alt={comp.style.name} />
-                    <span>
-                      <ActionInput
-                        type="checkbox"
-                        checked={!comp.style_deselected_images.includes(i.id)}
-                        onChange={(e) =>
-                          act(async () =>
-                            setComp(
-                              await api(`/compositions/${comp.id}`, "PATCH", {
-                                style_deselected_images: e.target.checked
-                                  ? comp.style_deselected_images.filter(
-                                      (x) => x !== i.id,
-                                    )
-                                  : [...comp.style_deselected_images, i.id],
-                              }),
-                            ),
-                          )
-                        }
-                      />
-                      Use style reference {i.id}
-                    </span>
-                  </label>
-                ))}
-            </div>
-          </>
-        )}
-      </div>
-      <ActionForm
-        className="panel"
-        onSubmit={(e) => {
-          e.preventDefault();
-          act(saveText);
-        }}
+      ))}
+      <button
+        type="button"
+        aria-expanded={picker}
+        onClick={() => setPicker(!picker)}
       >
-        <>
+        Add asset
+      </button>
+      {picker && (
+        <div className="asset-picker" aria-label="Asset picker">
+          {pickerError && <p role="alert">{pickerError}</p>}
           <label>
-            Composition name
-            <ActionInput
-              required
-              value={compName}
-              onChange={(e) => setCompName(e.target.value)}
+            Search assets
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
             />
           </label>
-          <label>
-            Composition creative direction
-            <ActionTextarea
-              rows="4"
-              value={direction}
-              onChange={(e) => setDirection(e.target.value)}
-            />
-          </label>
-          <label>
-            Scene
-            <ActionTextarea
-              rows="5"
-              value={scene}
-              onChange={(e) => setScene(e.target.value)}
-            />
-          </label>
-        </>
-        {
-          <>
-            <label>
-              Frame name
-              <ActionInput
-                required
-                value={frameName}
-                onChange={(e) => setFrameName(e.target.value)}
-              />
-            </label>
-            <label>
-              Frame instructions
-              <ActionTextarea
-                rows="3"
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-              />
-            </label>
-          </>
-        }
-        <ActionButton className="primary">Save instructions</ActionButton>
-      </ActionForm>
-      {
-        <>
-          <h3>Shared asset pack · all frames</h3>
-          <ActionForm
-            className="panel"
-            onSubmit={(e) => {
-              e.preventDefault();
-              act(async () => {
-                setComp(
-                  await api(
-                    `/compositions/${comp.id}/assets/${assetId}`,
-                    "PUT",
-                    {
-                      role,
-                    },
-                  ),
-                );
-                setAssetId("");
-                setRole("");
-              });
-            }}
-          >
-            <h3>Add an asset</h3>
-            <label>
-              Assets
-              <ActionSelect
-                required
-                value={assetId}
-                onChange={(e) => setAssetId(e.target.value)}
+          {assets
+            .filter(
+              (a) =>
+                a.type !== "style" &&
+                !comp.assets.some((s) => s.asset_id === a.id) &&
+                a.name.toLowerCase().includes(query.toLowerCase()),
+            )
+            .map((a) => (
+              <ActionButton
+                type="button"
+                key={a.id}
+                className="asset-pick"
+                onClick={() =>
+                  act(async () => {
+                    setComp(
+                      await api(
+                        `/compositions/${comp.id}/assets/${a.id}`,
+                        "PUT",
+                        { role: a.name },
+                      ),
+                    );
+                    setPicker(false);
+                  })
+                }
               >
-                <option value="">Choose an asset</option>
-                {available.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </ActionSelect>
-            </label>
-            <label>
-              Role
-              <ActionInput
-                required
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                placeholder="For example, the background"
-              />
-            </label>
-            <ActionButton disabled={!assetId}>Add asset</ActionButton>
-          </ActionForm>
-          {comp.assets.map((s) => (
-            <Selection
-              key={s.id}
-              selection={s}
-              save={saveSelection}
-              remove={() =>
-                act(async () =>
-                  setComp(
-                    await api(
-                      `/compositions/${comp.id}/assets/${s.asset_id}`,
-                      "DELETE",
-                    ),
-                  ),
-                )
-              }
-            />
-          ))}
-        </>
-      }
-      {
+                {thumbnails[a.id] && (
+                  <img src={`/api/files/${thumbnails[a.id]}`} alt="" />
+                )}
+                <span>
+                  {a.name} · {assetTypes[a.type]}
+                </span>
+              </ActionButton>
+            ))}
+          <button type="button" onClick={() => setPicker(false)}>
+            Close picker
+          </button>
+        </div>
+      )}
+      <details className="pack-row">
+        <summary className="pack-heading">
+          {comp.style?.images[0] && (
+            <img src={`/api/files/${comp.style.images[0].hash}`} alt="" />
+          )}
+          Style · {comp.style?.name || "None"}
+        </summary>
+        <StylePicker
+          value={comp.style_asset_id}
+          inherit
+          act={act}
+          onChange={(style_asset_id) =>
+            patch({ style_asset_id, style_deselected_images: [] })
+          }
+        />
+        <div className="reference-toggles">
+          {comp.style?.images
+            .filter((i) => i.approved && !i.rejected)
+            .map((i, index, images) => (
+              <label key={i.id}>
+                <img src={`/api/files/${i.hash}`} alt={comp.style.name} />
+                <span>
+                  <ActionInput
+                    type="checkbox"
+                    checked={!comp.style_deselected_images.includes(i.id)}
+                    onChange={(e) =>
+                      patch({
+                        style_deselected_images: e.target.checked
+                          ? comp.style_deselected_images.filter(
+                              (x) => x !== i.id,
+                            )
+                          : [...comp.style_deselected_images, i.id],
+                      })
+                    }
+                  />
+                  {comp.style.name}, reference {index + 1} of {images.length}
+                </span>
+              </label>
+            ))}
+        </div>
+      </details>
+      {field("name", "Composition name")}
+      {field("direction", "Direction", 4)}
+      {field("scene", "Scene", 5)}
+      {comp.kind === "storyboard" && (
         <>
-          <div className="panel">
-            <h3>References for this frame</h3>
-            <p>Choose references and optional originals for this frame only.</p>
+          {field("frameName", "Frame name")}
+          {field("instructions", "Frame instructions", 3)}
+          <details>
+            <summary>This frame only</summary>
             <div className="reference-toggles">
-              {frameImages.map((i) => (
+              {frameImages.map((i, index) => (
                 <label key={i.id}>
                   <img src={`/api/files/${i.hash}`} alt={i.asset.name} />
                   <span>
@@ -274,15 +269,38 @@ export function CompositionSetup({
                         })
                       }
                     />
-                    Use {i.asset.name} {i.approved ? "reference" : "original"}{" "}
-                    {i.id}
+                    {i.asset.name}, {i.approved ? "reference" : "original"}{" "}
+                    {frameImages
+                      .filter(
+                        (x) =>
+                          x.asset.id === i.asset.id &&
+                          x.approved === i.approved,
+                      )
+                      .indexOf(i) + 1}{" "}
+                    of{" "}
+                    {
+                      frameImages.filter(
+                        (x) =>
+                          x.asset.id === i.asset.id &&
+                          x.approved === i.approved,
+                      ).length
+                    }
                   </span>
                 </label>
               ))}
             </div>
-          </div>
+          </details>
         </>
-      }
-    </>
+      )}
+      {draft !== null && (
+        <PinnedReferences draft={draft} setDraft={setDraft} current={current} />
+      )}
+      <p className="reference-total">{references.length} references selected</p>
+      {warnings.map((w) => (
+        <p className="limit-warning" role="alert" key={w}>
+          {w}
+        </p>
+      ))}
+    </aside>
   );
 }

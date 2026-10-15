@@ -1,222 +1,347 @@
-import { ActionGroup, ActionButton, ActionForm, ActionSelect } from "./Actions";
-import React, { useEffect, useState } from "react";
+import { ActionButton, ActionForm, ActionSelect } from "./Actions";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { Runs, PinnedReferences } from "./Runs";
-import { ModelRequests } from "./ModelRequests";
+import { Runs } from "./Runs";
+import { ModelRequests, formats } from "./ModelRequests";
 import { Storyboard } from "./CompositionControls";
 import { CompositionSetup } from "./CompositionSetup";
+import { WorkspaceMenu } from "./WorkspaceMenu";
+import { useAutosave } from "./useAutosave";
 
-export function CompositionPage({ id, frameId, tab = "setup", projects, act }) {
+export function CompositionPage({ id, frameId, projects, act }) {
   const [comp, setComp] = useState(null);
   const [assets, setAssets] = useState([]);
-  const [assetId, setAssetId] = useState("");
-  const [role, setRole] = useState("");
-  const [direction, setDirection] = useState("");
-  const [compName, setCompName] = useState("");
-  const [confirming, setConfirming] = useState(false);
-  const [queuedRun, setQueuedRun] = useState(null);
-  const [scene, setScene] = useState("");
-  const [instructions, setInstructions] = useState("");
+  const [models, setModels] = useState([]);
+  useEffect(() => {
+    let active = true;
+    act(async () => {
+      const [c, a, m] = await Promise.all([
+        api(`/compositions/${id}`),
+        api("/assets"),
+        api("/models"),
+      ]);
+      if (!active) return;
+      setComp(c);
+      setAssets(a);
+      setModels(m);
+    }, false);
+    return () => {
+      active = false;
+    };
+  }, [id]);
+  useEffect(() => {
+    if (comp && !comp.variants.some((v) => v.id === Number(frameId)))
+      window.location.replace(
+        `#composition/${id}/frame/${comp.variants[0].id}`,
+      );
+  }, [comp, frameId, id]);
+  const variant = comp?.variants.find((v) => v.id === Number(frameId));
+  if (!comp || !variant) return <p>Loading composition…</p>;
+  return (
+    <Workspace
+      key={variant.id}
+      {...{ comp, setComp, assets, models, variant, projects, act }}
+    />
+  );
+}
+
+export function referenceWarnings(choices, models, references) {
+  return choices.flatMap((c) => {
+    const info = models.find((m) => m.model_name === c.model)?.model_info;
+    if (!info) return [`${c.model}: no longer available.`];
+    const warnings = [];
+    if (references.length > info.max_references)
+      warnings.push(
+        `${info.display_name}: selected ${references.length} references; accepts at most ${info.max_references}.`,
+      );
+    for (const [slot, limit] of Object.entries(info.reference_slots || {})) {
+      const count = references.filter((r) =>
+        slot === "character" ? r.type === "person" : r.type !== "person",
+      ).length;
+      if (count > limit)
+        warnings.push(
+          `${info.display_name}: selected ${count} ${slot} references; accepts at most ${limit}.`,
+        );
+    }
+    return warnings;
+  });
+}
+const runSettings = (run, prompts = false) => ({
+  choices: run.generations
+    .filter((g) => !g.retry_of)
+    .map((g) => ({
+      model: g.model,
+      count: g.count,
+      ...(g.settings ? { settings: g.settings } : {}),
+      ...(prompts ? { prompt: g.prompt } : {}),
+    })),
+  format: run.generations[0]?.settings?.format || "1:1",
+});
+
+function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
+  const autosave = useAutosave(comp, variant, setComp);
+  const { direction, scene, instructions } = autosave.value;
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState("");
-  const [draftContent, setDraftContent] = useState("");
+  const [choices, setChoices] = useState([]);
   const [format, setFormat] = useState("1:1");
   const [rendered, setRendered] = useState(null);
-  const [models, setModels] = useState([]);
-  const [choices, setChoices] = useState([]);
-  const [draft, setDraft] = useState(null);
   const [revision, setRevision] = useState(0);
-  const [frameName, setFrameName] = useState("");
-  const variant = comp?.variants.find((v) => v.id === Number(frameId));
-  const navigate = (nextTab, nextFrame = variant?.id) => {
-    window.location.hash = `composition/${id}/frame/${nextFrame}/${nextTab}`;
-  };
+  const [queuedRun, setQueuedRun] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [draftContent, setDraftContent] = useState("");
+  const [reusedAt, setReusedAt] = useState("");
+  const remembered = useRef(null);
+  const [initialized, setInitialized] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [toolbar, setToolbar] = useState({
+    pending: false,
+    error: "",
+    notice: "",
+  });
   useEffect(() => {
-    act(async () => {
-      const c = await api(`/compositions/${id}`);
-      const frame = c.variants.find((v) => v.id === Number(frameId));
-      if (!frame) {
-        window.location.replace(
-          `#composition/${id}/frame/${c.variants[0].id}/setup`,
-        );
-        return;
-      }
-      setComp(c);
-      setScene(c.scene);
-      setDirection(c.direction);
-      setCompName(c.name);
-      setInstructions(frame?.instructions ?? "");
-      setFrameName(frame?.name ?? "");
-      setAssets(await api("/assets"));
-      setModels(await api("/models"));
-    }, false);
-  }, [id, frameId]);
-  useEffect(() => {
-    if (!variant) return;
-    setInstructions(variant.instructions);
-    setFrameName(variant.name);
-    setDraft(null);
-    setDraftContent("");
-    setQueuedRun(null);
-  }, [variant?.id]);
-  useEffect(() => {
-    if (!variant) return;
-    let active = true;
-    setPreview(null);
+    if (!toolbar.notice) return;
     const timer = setTimeout(
-      () =>
-        (async () => {
-          try {
-            const result = await api(
-              `/variants/${variant.id}/preview`,
-              "POST",
-              {
-                direction,
-                scene,
-                instructions,
-              },
-            );
-            if (active) {
-              setPreview(result);
-              setPreviewError("");
-            }
-          } catch (e) {
-            if (active) setPreviewError(e.message);
-          }
-        })(),
-      200,
+      () => setToolbar((old) => ({ ...old, notice: "" })),
+      4000,
     );
+    return () => clearTimeout(timer);
+  }, [toolbar.notice]);
+  const toolbarAction = async (task) => {
+    setToolbar({ pending: true, error: "", notice: "" });
+    try {
+      await task();
+      setToolbar({ pending: false, error: "", notice: "Saved." });
+    } catch (e) {
+      setToolbar({ pending: false, error: e.message, notice: "" });
+    }
+  };
+  const form = useRef(null);
+  const bar = useRef(null);
+  useEffect(() => {
+    const resize = new ResizeObserver(() => {
+      bar.current
+        ?.closest(".composition-workspace")
+        .style.setProperty(
+          "--generate-bar-height",
+          `${bar.current.getBoundingClientRect().height}px`,
+        );
+    });
+    resize.observe(bar.current);
+    return () => resize.disconnect();
+  }, []);
+  const navigate = async (next) => {
+    await autosave.flush();
+    window.location.hash = `composition/${comp.id}/frame/${next}`;
+  };
+  const refresh = async () => setComp(await api(`/compositions/${comp.id}`));
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const own = await api(`/variants/${variant.id}/runs`);
+        let latest = own[0];
+        if (!latest) {
+          const others = await Promise.all(
+            comp.variants
+              .filter((v) => v.id !== variant.id)
+              .map((v) => api(`/variants/${v.id}/runs`)),
+          );
+          latest = others
+            .flat()
+            .sort(
+              (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+            )[0];
+        }
+        if (active) {
+          if (latest) {
+            const settings = runSettings(latest);
+            setChoices(settings.choices);
+            setFormat(settings.format);
+          }
+          if (!latest && models.length) {
+            const ratios = models.flatMap((m) => formats(m.model_info));
+            setFormat(ratios.includes("1:1") ? "1:1" : ratios[0] || "1:1");
+          }
+          setInitialized(true);
+        }
+      } catch (e) {
+        if (active) setPreviewError(e.message);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [variant.id]);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api(`/variants/${variant.id}/preview`, "POST", {
+          direction,
+          scene,
+          instructions,
+        });
+        if (active) {
+          setPreview(result);
+          setPreviewError("");
+        }
+      } catch (e) {
+        if (active) setPreviewError(e.message);
+      }
+    }, 200);
     return () => {
       active = false;
       clearTimeout(timer);
     };
   }, [comp, direction, scene, instructions]);
-  if (!comp || !variant) return <p>Loading composition…</p>;
-  const saveSelection = (s) =>
-    act(async () =>
-      setComp(
-        await api(`/compositions/${comp.id}/assets/${s.asset_id}`, "PUT", {
-          role: s.role,
-          deselected_images: s.deselected_images,
-          selected_originals: s.selected_originals,
-        }),
-      ),
-    );
-  async function saveText() {
-    await api(`/variants/${variant.id}`, "PATCH", {
-      name: frameName,
-      instructions,
-    });
-    setComp(
-      await api(`/compositions/${comp.id}`, "PATCH", {
-        name: compName,
-        direction,
-        scene,
-      }),
-    );
-  }
+  useEffect(() => {
+    const key = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        form.current?.requestSubmit();
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   const references = draft ?? preview?.references ?? [];
-  const invalidModels =
-    !choices.length ||
-    choices.some((c) => {
-      const info = models.find((m) => m.model_name === c.model)?.model_info;
-      return !info || references.length > info.max_references;
+  const warnings = referenceWarnings(choices, models, references);
+  const patch = (value) =>
+    toolbarAction(async () => {
+      await autosave.flush();
+      setComp(await api(`/compositions/${comp.id}`, "PATCH", value));
     });
-  const available = assets.filter(
-    (a) => a.type !== "style" && !comp.assets.some((s) => s.asset_id === a.id),
-  );
+  const canGenerate =
+    initialized && choices.length && !warnings.length && preview && rendered;
   return (
-    <section>
-      <div className="library-header">
-        <h2>{comp.name}</h2>
-        <a href="#compositions">Compositions</a>
+    <section className="composition-workspace">
+      <div className="workspace-toolbar">
+        <div className="breadcrumb">
+          <span>
+            {projects.find((p) => p.id === comp.project_id)?.name ||
+              "No project"}
+          </span>{" "}
+          › <strong>{autosave.value.name}</strong>
+          {comp.kind === "storyboard" && (
+            <> › {autosave.value.frameName}</>
+          )}{" "}
+          <span className="badge">
+            {comp.kind === "single" ? "Single image" : "Storyboard"}
+          </span>
+        </div>
+        <div className="actions">
+          <WorkspaceMenu label="Share">
+            <a
+              role="menuitem"
+              href={`/api/compositions/${comp.id}/sequence.zip`}
+            >
+              Export images
+            </a>
+            <a role="menuitem" href={`/api/compositions/${comp.id}/export.zip`}>
+              Export package
+            </a>
+            <p>
+              {comp.variants.some((v) => !v.final)
+                ? `Export images skips frames without finals: ${comp.variants
+                    .filter((v) => !v.final)
+                    .map((v) => v.name)
+                    .join(", ")}`
+                : "Every frame final is included."}
+            </p>
+          </WorkspaceMenu>
+          <WorkspaceMenu label="⋯">
+            <ActionButton
+              role="menuitem"
+              disabled={toolbar.pending}
+              onClick={() =>
+                toolbarAction(async () => {
+                  await autosave.flush();
+                  const copy = await api(
+                    `/compositions/${comp.id}/duplicate`,
+                    "POST",
+                  );
+                  window.location.hash = `composition/${copy.id}`;
+                })
+              }
+            >
+              Duplicate
+            </ActionButton>
+            <button
+              role="menuitem"
+              disabled={toolbar.pending}
+              onClick={() => setMoving(true)}
+            >
+              Move to project…
+            </button>
+            <ActionButton
+              role="menuitem"
+              disabled={
+                toolbar.pending ||
+                (comp.kind === "storyboard" && comp.variants.length > 1)
+              }
+              onClick={() =>
+                patch({
+                  kind: comp.kind === "single" ? "storyboard" : "single",
+                })
+              }
+            >
+              {comp.kind === "single" ? "Make storyboard" : "Make single image"}
+            </ActionButton>
+            {comp.kind === "storyboard" && comp.variants.length > 1 && (
+              <p>A single image needs exactly one frame.</p>
+            )}
+            <button
+              role="menuitem"
+              className="destructive"
+              disabled={toolbar.pending}
+              onClick={() => setConfirming(true)}
+            >
+              Delete…
+            </button>
+          </WorkspaceMenu>
+        </div>
       </div>
-      <ActionGroup className="composition-header">
-        <label>
-          Kind
-          <ActionSelect
-            value={comp.kind}
-            onChange={(e) =>
-              act(async () =>
-                setComp(
-                  await api(`/compositions/${comp.id}`, "PATCH", {
-                    kind: e.target.value,
-                  }),
-                ),
-              )
-            }
-          >
-            <option value="single" disabled={comp.variants.length > 1}>
-              Single image
-            </option>
-            <option value="storyboard">Storyboard</option>
-          </ActionSelect>
-        </label>
-        <label>
-          Project
-          <ActionSelect
-            value={comp.project_id ?? ""}
-            onChange={(e) =>
-              act(async () =>
-                setComp(
-                  await api(`/compositions/${comp.id}`, "PATCH", {
-                    project_id: e.target.value ? Number(e.target.value) : null,
-                  }),
-                ),
-              )
-            }
-          >
-            <option value="">No project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </ActionSelect>
-        </label>
-      </ActionGroup>
-      <div className="actions">
-        <a
-          className="button-link"
-          href={`/api/compositions/${comp.id}/sequence.zip`}
-        >
-          Export images
-        </a>
-        <a
-          className="button-link"
-          href={`/api/compositions/${comp.id}/export.zip`}
-        >
-          Export package
-        </a>
-        <ActionButton
-          className={tab === "history" ? "primary" : "secondary"}
-          onClick={() =>
-            act(async () => {
-              const copy = await api(
-                `/compositions/${comp.id}/duplicate`,
-                "POST",
-              );
-              window.location.hash = `composition/${copy.id}`;
-            })
-          }
-        >
-          Duplicate
-        </ActionButton>
-        <ActionButton
-          className="destructive"
-          onClick={() => setConfirming(true)}
-        >
-          Delete…
-        </ActionButton>
-      </div>
-      <p className="export-note">
-        {comp.variants.some((v) => !v.final)
-          ? `Export images skips frames without finals: ${comp.variants
-              .filter((v) => !v.final)
-              .map((v) => v.name)
-              .join(", ")}`
-          : "Export images includes every frame final."}
-      </p>
+      {toolbar.pending && (
+        <span role="status" className="action-status">
+          Saving…
+        </span>
+      )}
+      {toolbar.notice && (
+        <span role="status" className="action-status">
+          {toolbar.notice}
+        </span>
+      )}
+      {toolbar.error && (
+        <p role="alert" className="error">
+          {toolbar.error}
+        </p>
+      )}
+      {moving && (
+        <div className="panel">
+          <label>
+            Move to project
+            <ActionSelect
+              disabled={toolbar.pending}
+              value={comp.project_id ?? ""}
+              onChange={(e) =>
+                patch({
+                  project_id: e.target.value ? Number(e.target.value) : null,
+                })
+              }
+            >
+              <option value="">No project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </ActionSelect>
+          </label>
+          <button onClick={() => setMoving(false)}>Done moving</button>
+        </div>
+      )}
       {confirming && (
         <div className="panel delete-confirm">
           <p>
@@ -227,6 +352,7 @@ export function CompositionPage({ id, frameId, tab = "setup", projects, act }) {
             className="destructive"
             onClick={() =>
               act(async () => {
+                await autosave.flush();
                 await api(`/compositions/${comp.id}`, "DELETE");
                 window.location.hash = "compositions";
               })
@@ -234,168 +360,115 @@ export function CompositionPage({ id, frameId, tab = "setup", projects, act }) {
           >
             Yes, delete composition
           </ActionButton>
-          <ActionButton className="plain" onClick={() => setConfirming(false)}>
-            Cancel
-          </ActionButton>
+          <button onClick={() => setConfirming(false)}>Cancel</button>
         </div>
       )}
       {comp.kind === "storyboard" && (
         <Storyboard
-          {...{ comp, setComp, act }}
+          comp={comp}
+          setComp={setComp}
+          act={act}
           selected={variant.id}
-          tab={tab}
           navigate={navigate}
+          flush={autosave.flush}
         />
       )}
-      {previewError && (
-        <p className="error" role="alert">
-          {previewError}
-        </p>
-      )}
-      <nav className="composition-tabs" aria-label="Composition tabs">
-        {["setup", "generate", "history"].map((t) => (
-          <a
-            key={t}
-            href={`#composition/${id}/frame/${variant.id}/${t}`}
-            aria-current={tab === t ? "page" : undefined}
-          >
-            {t[0].toUpperCase() + t.slice(1)}
-          </a>
-        ))}
-      </nav>
-      {tab === "setup" && (
+      <div className="workspace-columns">
         <CompositionSetup
           {...{
             comp,
-            compName,
-            setCompName,
-            direction,
-            setDirection,
-            scene,
-            setScene,
-            frameName,
-            setFrameName,
-            instructions,
-            setInstructions,
-            act,
-            saveText,
-            available,
-            assetId,
-            setAssetId,
-            role,
-            setRole,
             setComp,
-            saveSelection,
             variant,
+            act,
+            autosave,
+            assets,
+            references,
+            warnings,
+            draft,
+            setDraft,
           }}
+          current={preview?.references ?? []}
         />
-      )}
-      {tab === "generate" && (
-        <>
-          {draft !== null && (
-            <>
-              <PinnedReferences
-                draft={draft}
-                setDraft={setDraft}
-                current={preview?.references ?? []}
-              />
-              <ActionButton
-                type="button"
-                onClick={() => {
-                  setDraft(null);
-                  setDraftContent("");
-                }}
-              >
-                Back to the current pack
-              </ActionButton>
-            </>
+        <div className="workspace-results" aria-label="Results">
+          {previewError && (
+            <p className="error" role="alert">
+              {previewError}
+            </p>
           )}
-          <div className="panel">
-            <ActionForm
-              success="Run queued."
-              onSubmit={(e) => {
-                e.preventDefault();
-                act(async () => {
-                  await saveText();
-                  const run = await api(
-                    `/variants/${variant.id}/runs`,
-                    "POST",
-                    {
-                      models: choices,
-                      ...(draft !== null ? { references: draft } : {}),
-                      format,
-                      ...(draft !== null ? { content: draftContent } : {}),
-                    },
-                  );
-                  setQueuedRun(run.run_id);
-                  setRevision((n) => n + 1);
-                });
-              }}
-            >
-              <ModelRequests
-                {...{
-                  models,
-                  choices,
-                  setChoices,
-                  format,
-                  setFormat,
-                  revision,
-                }}
-                content={draft !== null ? draftContent : preview?.prompt}
-                references={references}
-                onPreview={setRendered}
-              />
-              <ActionButton
-                className="primary"
-                disabled={
-                  invalidModels || (draft === null && !preview) || !rendered
-                }
-              >
-                Generate
-              </ActionButton>
-            </ActionForm>
-          </div>
-          {queuedRun && (
-            <Runs
-              variantId={variant.id}
-              {...{ act, revision }}
-              runId={queuedRun}
-              reuse={() => {}}
-            />
-          )}
-        </>
-      )}
-      {tab === "history" && (
-        <>
-          <h3>{frameName} results</h3>
           <Runs
+            key={variant.id}
             variantId={variant.id}
-            {...{ act, revision }}
-            refresh={() =>
-              act(
-                async () => setComp(await api(`/compositions/${comp.id}`)),
-                false,
-              )
-            }
+            {...{ act, revision, refresh }}
+            workspace
+            queuedRun={queuedRun}
             reuse={(run) => {
+              if (draft === null) remembered.current = { choices, format };
+              const settings = runSettings(run, true);
               setDraft(run.references.map((r) => ({ ...r })));
-              setChoices(
-                run.generations
-                  .filter((g) => !g.retry_of)
-                  .map((g) => ({
-                    model: g.model,
-                    count: g.count,
-                    prompt: g.prompt,
-                    ...(g.settings ? { settings: g.settings } : {}),
-                  })),
-              );
+              setChoices(settings.choices);
+              setFormat(settings.format);
               setDraftContent(run.generations[0].assembled_prompt);
-              setFormat(run.generations[0].settings?.format || "1:1");
-              navigate("generate");
+              setReusedAt(new Date(run.created_at).toLocaleString());
             }}
           />
-        </>
-      )}
+        </div>
+      </div>
+      <div className="generate-bar" ref={bar}>
+        {draft !== null && (
+          <div className="reuse-chip">
+            Reused from {reusedAt} ·{" "}
+            <button
+              type="button"
+              className="plain"
+              onClick={() => {
+                setDraft(null);
+                setDraftContent("");
+                setChoices(remembered.current.choices);
+                setFormat(remembered.current.format);
+              }}
+            >
+              Back to current
+            </button>
+          </div>
+        )}
+        <ActionForm
+          success="Run queued."
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!canGenerate) return;
+            act(async () => {
+              await autosave.flush();
+              const run = await api(`/variants/${variant.id}/runs`, "POST", {
+                models: choices,
+                format,
+                ...(draft !== null
+                  ? { references: draft, content: draftContent }
+                  : {}),
+              });
+              setQueuedRun(run);
+              setRevision((n) => n + 1);
+            });
+          }}
+        >
+          <div
+            ref={(node) => {
+              form.current = node?.closest("form");
+            }}
+            className="generate-controls"
+          >
+            <ModelRequests
+              {...{ models, choices, setChoices, format, setFormat, revision }}
+              workspace
+              content={draft !== null ? draftContent : preview?.prompt}
+              references={references}
+              onPreview={setRendered}
+            />
+            <ActionButton className="primary" disabled={!canGenerate}>
+              Generate
+            </ActionButton>
+          </div>
+        </ActionForm>
+      </div>
     </section>
   );
 }

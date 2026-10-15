@@ -1,7 +1,7 @@
 import { usePolling } from "./usePolling";
 import { hasActive, GenerationProgress } from "./Progress";
 import { ActionButton, ActionInput, ActionSelect } from "./Actions";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { Feedback } from "./Feedback";
 import { ModelCost } from "./ModelCost";
@@ -181,8 +181,27 @@ export function PinnedReferences({ draft, setDraft, current }) {
   );
 }
 
-export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
+export function Runs({
+  variantId,
+  act,
+  revision,
+  reuse,
+  runId,
+  refresh,
+  workspace = false,
+  queuedRun,
+}) {
   const [runs, setRuns] = useState([]);
+  const [selected, setSelected] = useState(null);
+  useEffect(() => {
+    if (queuedRun) {
+      setRuns((old) => [
+        queuedRun,
+        ...old.filter((r) => r.run_id !== queuedRun.run_id),
+      ]);
+      setSelected(queuedRun.run_id);
+    }
+  }, [queuedRun]);
   const [final, setFinal] = useState(null);
   const pollError = usePolling(
     async (active) => {
@@ -258,7 +277,7 @@ export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
           ))}
         </div>
       )}
-      {!runId && final && (
+      {!workspace && !runId && final && (
         <div className="panel final-image">
           <h3>Final image</h3>
           <a href={`#output/${final.generation_id}/${final.output}`}>
@@ -285,8 +304,28 @@ export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
           </ActionButton>
         </div>
       )}
+      {workspace && final && (
+        <ActionButton
+          className="plain"
+          onClick={() =>
+            act(async () => {
+              setFinal(await api(`/variants/${variantId}/final`, "DELETE"));
+              if (refresh) await refresh();
+            })
+          }
+        >
+          Clear final
+        </ActionButton>
+      )}
       {runs
-        .filter((run) => !runId || run.run_id === runId)
+        .filter((run) =>
+          workspace
+            ? run.run_id ===
+              (runs.some((r) => r.run_id === selected)
+                ? selected
+                : runs[0]?.run_id)
+            : !runId || run.run_id === runId,
+        )
         .map((run) => {
           const originals = run.generations.filter((g) => !g.retry_of);
           return (
@@ -300,7 +339,9 @@ export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
                 )}
               </div>
               <details>
-                <summary>Run snapshot</summary>
+                <summary>
+                  {workspace ? "Technical details" : "Run snapshot"}
+                </summary>
                 <p>{run.edited ? "Edited prompt" : "Assembled prompt"}</p>
                 <pre>{run.prompt}</pre>
                 {originals.map((g) => (
@@ -335,6 +376,7 @@ export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
                   </details>
                 ))}
                 <References references={run.references} />
+                <pre>{JSON.stringify(run, null, 2)}</pre>
               </details>
               <div
                 className="run-columns"
@@ -396,7 +438,13 @@ export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
                                 saved={(f) => saveFeedback(g.id, output, f)}
                               />
                               {g.state === "done" && (
-                                <ActionButton onClick={() => choose(g, output)}>
+                                <ActionButton
+                                  aria-pressed={
+                                    final?.generation_id === g.id &&
+                                    final.output === output
+                                  }
+                                  onClick={() => choose(g, output)}
+                                >
                                   {final?.generation_id === g.id &&
                                   final.output === output
                                     ? "Final"
@@ -413,7 +461,52 @@ export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
             </article>
           );
         })}
-      {!runs.length && <p>No runs yet.</p>}
+      {workspace && runs.length > 0 && (
+        <div className="earlier-runs">
+          <h3>Earlier runs</h3>
+          <div className="run-strip" aria-label="Earlier runs">
+            {runs.map((run) => (
+              <button
+                type="button"
+                key={run.run_id}
+                aria-pressed={
+                  run.run_id ===
+                  (runs.some((r) => r.run_id === selected)
+                    ? selected
+                    : runs[0]?.run_id)
+                }
+                onClick={() => setSelected(run.run_id)}
+              >
+                <span className="run-thumbnails">
+                  {run.generations
+                    .flatMap((g) => g.outputs)
+                    .slice(0, 3)
+                    .map((hash, i) => (
+                      <img key={i} src={`/api/files/${hash}`} alt="" />
+                    ))}
+                </span>
+                <time>{new Date(run.created_at).toLocaleString()}</time>
+                <span>
+                  {[
+                    ...new Set(
+                      run.generations.map((g) => g.model_info.display_name),
+                    ),
+                  ].join(", ")}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {!runs.length && (
+        <div className="empty-library">
+          <h3>Your next image starts here</h3>
+          <p>
+            Set the scene, choose a model and generate. Your runs will appear
+            beside your instructions.
+          </p>
+        </div>
+      )}
     </>
   );
 }
