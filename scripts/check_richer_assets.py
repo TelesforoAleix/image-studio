@@ -136,9 +136,10 @@ def prove(request, wait, upload):
             status=201,
         )
         done = wait(run["generations"][0]["id"])
-        assert [r["hash"] for r in done["references"]] == expected[2:3] + expected[
-            :2
-        ] + expected[3:]
+        prior = [snapshots[-1]["outputs"][0]] if snapshots else []
+        assert [r["hash"] for r in done["references"]] == (
+            prior + expected[2:3] + expected[:2] + expected[3:]
+        )
         snapshots.append(done)
     request(
         f"/api/variants/{frames[0]['id']}",
@@ -158,7 +159,7 @@ def prove(request, wait, upload):
     assert [
         r["hash"]
         for r in request(f"/api/variants/{frames[1]['id']}/preview")["references"]
-    ] == expected
+    ] == [ticked["outputs"][0]] + expected
     assert request(f"/api/generations/{snapshots[1]['id']}") == snapshots[1]
     print(
         "PROOF RICH 3 one frame ticks original after person References; "
@@ -173,13 +174,13 @@ def prove(request, wait, upload):
         "PUT",
         {"role": "Subject", "selected_originals": [original["id"]]},
     )
-    assert len(request(f"/api/variants/{frames[1]['id']}/preview")["references"]) == 6
+    assert len(request(f"/api/variants/{frames[1]['id']}/preview")["references"]) == 7
     request(
         f"/api/variants/{frames[1]['id']}",
         "PATCH",
         {"deselected_images": [original["id"]]},
     )
-    assert len(request(f"/api/variants/{frames[1]['id']}/preview")["references"]) == 5
+    assert len(request(f"/api/variants/{frames[1]['id']}/preview")["references"]) == 6
     # Style references can be deselected independently in the pack and frame.
     request(path, "PATCH", {"style_deselected_images": [style["images"][0]["id"]]})
     request(
@@ -256,7 +257,7 @@ def prove(request, wait, upload):
         == candidate["lineage"]
     )
     exported = package(path)
-    assert exported["format_version"] == 5 and exported["style"]["id"] == style["id"]
+    assert exported["format_version"] == 6 and exported["style"]["id"] == style["id"]
     assert exported["asset_pack"][0]["asset"]["type"] == "person"
     assert exported["asset_pack"][0]["asset"]["preserve"] == person["preserve"]
     aexport = package(f"/api/assets/{garment['id']}")
@@ -265,7 +266,7 @@ def prove(request, wait, upload):
         aexport["asset"][k] == garment[k] for k in ("type", "type_tag", "preserve")
     )
     print(
-        "PROOF RICH 6 package versions asset 2/composition 3 "
+        "PROOF RICH 6 package versions asset 2/composition 6 "
         "with type, label, preservation and style",
         flush=True,
     )

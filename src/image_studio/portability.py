@@ -17,6 +17,7 @@ from image_studio.schema import (
     assets,
     composition_assets,
     compositions,
+    frame_sequences,
     generations,
     projects,
     stored_files,
@@ -46,7 +47,7 @@ def snapshot(function):
 def manifest(kind):
     return {
         "format": f"image-studio-{kind}",
-        "format_version": 5 if kind == "composition" else 2,
+        "format_version": 6 if kind == "composition" else 2,
         "exported_at": datetime.now(UTC).isoformat(),
     }
 
@@ -106,6 +107,14 @@ def composition_manifest(connection, identifier):
     result["composition"] = serial(comp)
     style = effective_style(connection, comp)
     result["style"] = asset_record(connection, style["id"]) if style else None
+    result["sequences"] = [
+        serial(r)
+        for r in connection.execute(
+            select(frame_sequences)
+            .where(frame_sequences.c.composition_id == identifier)
+            .order_by(frame_sequences.c.id)
+        ).mappings()
+    ]
     result["frames"] = []
     hashes = record_hashes(result["style"]) if result["style"] else set()
     reference_hashes = {}
@@ -134,7 +143,8 @@ def composition_manifest(connection, identifier):
             hashes.update(row["outputs"])
             for ref in row["references"]:
                 hashes.add(ref["hash"])
-                reference_hashes.setdefault(ref["asset_id"], set()).add(ref["hash"])
+                if ref.get("asset_id") is not None:
+                    reference_hashes.setdefault(ref["asset_id"], set()).add(ref["hash"])
         record["runs"] = [
             {"run_id": run_id, "generations": rows} for run_id, rows in runs.items()
         ]

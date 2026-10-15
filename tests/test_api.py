@@ -78,6 +78,7 @@ def test_migration_is_idempotent_and_matches_definitions(client):
         "generations",
         "image_models",
         "output_feedback",
+        "frame_sequences",
     }
     with engine.connect() as connection:
         assert compare_metadata(MigrationContext.configure(connection), metadata) == []
@@ -85,7 +86,7 @@ def test_migration_is_idempotent_and_matches_definitions(client):
             connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
             ).scalar_one()
-            == "0011"
+            == "0012"
         )
 
 

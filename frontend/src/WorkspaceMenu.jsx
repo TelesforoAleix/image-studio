@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
 // Native buttons/links retain click semantics; roving focus adds menu keys.
-export function WorkspaceMenu({ label, icon, children }) {
+export function WorkspaceMenu({ label, icon, children, above = false }) {
   const [open, setOpen] = useState(false);
   const root = useRef(null);
   const trigger = useRef(null);
@@ -77,7 +77,14 @@ export function WorkspaceMenu({ label, icon, children }) {
           aria-label={label}
           style={{
             position: "fixed",
-            top: trigger.current?.getBoundingClientRect().bottom + 8,
+            top: above
+              ? "auto"
+              : trigger.current?.getBoundingClientRect().bottom + 8,
+            bottom: above
+              ? window.innerHeight -
+                trigger.current?.getBoundingClientRect().top +
+                8
+              : "auto",
             left: Math.min(
               trigger.current?.getBoundingClientRect().left,
               window.innerWidth - 316,

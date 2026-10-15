@@ -84,14 +84,14 @@ def main():
             "/api/files/" + done["outputs"][0]
         )
     exported = package(path)
-    assert exported["format_version"] == 5
+    assert exported["format_version"] == 6
     assert exported["composition"]["brief"] == single["brief"]
     assert "direction" not in exported["composition"]
     assert "scene" not in exported["composition"]
     assert exported["project"] is None and exported["composition"]["kind"] == "single"
     assert all(s["asset"]["project_id"] is None for s in exported["asset_pack"])
     print(
-        "PROOF STRUCTURE 2 both stand-alone exports work; package version 5 "
+        "PROOF STRUCTURE 2 both stand-alone exports work; package version 6 "
         "project null and assets global",
         flush=True,
     )

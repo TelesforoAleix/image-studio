@@ -67,7 +67,7 @@ def test_standalone_moves_listing_exports_and_snapshots(generation_client):
         f"/api/variants/{frame}/final", json={"generation_id": done["id"], "output": 0}
     )
     package = unpack(c.get(path + "/export.zip").data)
-    assert package["project"] is None and package["format_version"] == 5
+    assert package["project"] is None and package["format_version"] == 6
     assert package["asset_pack"][0]["asset"]["project_id"] is None
     assert c.get(path + "/sequence.zip").status_code == 200
     folders = [

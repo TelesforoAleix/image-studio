@@ -30,7 +30,11 @@ export const Feedback = forwardRef(function Feedback(
     return () => clearTimeout(timer);
   }, [notice]);
   const references = [
-    ...new Map(generation.references.map((r) => [r.asset_id, r])).values(),
+    ...new Map(
+      generation.references
+        .filter((r) => r.asset_id != null)
+        .map((r) => [r.asset_id, r]),
+    ).values(),
   ];
   const save = (value, detail = false) =>
     act(async () => {

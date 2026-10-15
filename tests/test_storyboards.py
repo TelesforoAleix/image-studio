@@ -88,13 +88,15 @@ def test_storyboard_journey(generation_client):
             json={"brief": "Draft scene", "instructions": "Draft action"},
         ).json
         assert preview["prompt"].endswith("Draft action")
-        assert len(preview["references"]) == (1 if index == 1 else 2)
+        assert len(preview["references"]) == (1 if index == 1 else 2) + (
+            1 if index else 0
+        )
         run = c.post(
             vpath + "/runs", json={"models": [{"model": "placeholder-a", "count": 1}]}
         ).json
         g = complete(c, root, run["generations"][0])
         assert g["placeholder"] and g["prompt"].endswith(f"Action {index}")
-        assert len(g["references"]) == (1 if index == 1 else 2)
+        assert len(g["references"]) == (1 if index == 1 else 2) + (1 if index else 0)
         done.append(g)
         if index != 1:
             assert (

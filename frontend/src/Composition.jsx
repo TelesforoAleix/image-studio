@@ -6,6 +6,7 @@ import { ModelRequests, formats } from "./ModelRequests";
 import { Storyboard } from "./CompositionControls";
 import { CompositionSetup } from "./CompositionSetup";
 import { WorkspaceMenu } from "./WorkspaceMenu";
+import { usePolling } from "./usePolling";
 import { useAutosave } from "./useAutosave";
 
 export function CompositionPage({ id, frameId, projects, act, onProject }) {
@@ -36,12 +37,30 @@ export function CompositionPage({ id, frameId, projects, act, onProject }) {
         `#composition/${id}/frame/${comp.variants[0].id}`,
       );
   }, [comp, frameId, id]);
+  const sequencePollError = usePolling(
+    async (active) => {
+      const next = await api(`/compositions/${id}`);
+      if (active()) setComp(next);
+    },
+    comp?.sequences?.some((s) => ["running", "stopping"].includes(s.state)),
+    id,
+    0,
+  );
   const variant = comp?.variants.find((v) => v.id === Number(frameId));
   if (!comp || !variant) return <p>Loading composition…</p>;
   return (
     <Workspace
       key={variant.id}
-      {...{ comp, setComp, assets, models, variant, projects, act }}
+      {...{
+        comp,
+        setComp,
+        assets,
+        models,
+        variant,
+        projects,
+        act,
+        sequencePollError,
+      }}
     />
   );
 }
@@ -79,7 +98,16 @@ const runSettings = (run, prompts = false) => ({
   format: run.generations[0]?.settings?.format || "1:1",
 });
 
-function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
+function Workspace({
+  comp,
+  setComp,
+  assets,
+  models,
+  variant,
+  projects,
+  act,
+  sequencePollError,
+}) {
   const autosave = useAutosave(comp, variant, setComp);
   const { brief, instructions } = autosave.value;
   const [preview, setPreview] = useState(null);
@@ -213,6 +241,30 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
       await autosave.flush();
       setComp(await api(`/compositions/${comp.id}`, "PATCH", value));
     });
+  const sequence = comp.sequences?.[0];
+  const activeSequence =
+    sequence && ["running", "stopping"].includes(sequence.state);
+  const selectedIndex = comp.variants.findIndex((f) => f.id === variant.id);
+  const failedFrame =
+    sequence?.state === "failed"
+      ? sequence.frames[sequence.current_frame]?.frame_id
+      : null;
+  const restIndex = failedFrame
+    ? comp.variants.findIndex((f) => f.id === failedFrame)
+    : selectedIndex;
+  const perFrameCost = rendered?.reduce((sum, p) => sum + p.estimated_cost, 0);
+  const startSequence = (mode) =>
+    toolbarAction(async () => {
+      await autosave.flush();
+      await api(`/compositions/${comp.id}/frame-sequences`, "POST", {
+        mode,
+        frame_id: mode === "rest" ? failedFrame || variant.id : variant.id,
+        models: choices,
+        format,
+      });
+      await refresh();
+      setRevision((n) => n + 1);
+    });
   const canGenerate =
     initialized && choices.length && !warnings.length && preview && rendered;
   return (
@@ -303,6 +355,11 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
           </WorkspaceMenu>
         </div>
       </div>
+      {sequencePollError && (
+        <p className="error" role="alert">
+          {sequencePollError}
+        </p>
+      )}
       {toolbar.pending && (
         <span role="status" className="action-status">
           Saving…
@@ -391,6 +448,7 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
             draft,
             setDraft,
           }}
+          previousFrame={preview?.previous_frame}
           current={preview?.references ?? []}
         />
         <div className="workspace-results" aria-label="Results">
@@ -402,7 +460,8 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
           <Runs
             key={variant.id}
             variantId={variant.id}
-            {...{ act, revision, refresh }}
+            {...{ act, refresh }}
+            revision={`${revision}:${sequence?.frames?.map((f) => f.run_id + f.state).join() || ""}`}
             workspace
             queuedRun={queuedRun}
             reuse={(run) => {
@@ -418,6 +477,42 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
         </div>
       </div>
       <div className="generate-bar" ref={bar}>
+        {comp.kind === "storyboard" &&
+          selectedIndex > 0 &&
+          variant.use_previous_frame !== false &&
+          !references.some((r) => r.role === "previous frame") && (
+            <p role="status">
+              No previous-frame image is available; this frame will run without
+              it.
+            </p>
+          )}
+        {sequence?.error && (
+          <p role="alert" className="error">
+            Sequence failed: {sequence.error}
+          </p>
+        )}
+        {activeSequence && (
+          <div className="actions">
+            <span role="status">
+              Sequence{" "}
+              {sequence.state === "stopping"
+                ? "stops after this frame"
+                : "running"}
+            </span>
+            <ActionButton
+              type="button"
+              disabled={sequence.state === "stopping"}
+              onClick={() =>
+                act(async () => {
+                  await api(`/frame-sequences/${sequence.id}/stop`, "POST");
+                  await refresh();
+                })
+              }
+            >
+              Stop sequence
+            </ActionButton>
+          </div>
+        )}
         {draft !== null && (
           <div className="reuse-chip">
             Reused from {reusedAt} ·{" "}
@@ -470,6 +565,50 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
             <ActionButton className="primary" disabled={!canGenerate}>
               Generate
             </ActionButton>
+            {comp.kind === "storyboard" && (
+              <WorkspaceMenu label="Sequence options" above>
+                {[
+                  ["full", "Generate the full sequence", comp.variants.length],
+                  [
+                    "next",
+                    "Generate the next frame",
+                    selectedIndex + 1 < comp.variants.length ? 1 : 0,
+                  ],
+                  [
+                    "rest",
+                    "Generate the rest",
+                    comp.variants.length - restIndex,
+                  ],
+                ].map(([mode, label, count]) => (
+                  <ActionButton
+                    type="button"
+                    role="menuitem"
+                    key={mode}
+                    disabled={
+                      !canGenerate ||
+                      activeSequence ||
+                      !count ||
+                      draft !== null ||
+                      choices.some((c) => c.prompt !== undefined)
+                    }
+                    onClick={() => startSequence(mode)}
+                  >
+                    {label} · {count} {count === 1 ? "frame" : "frames"} ·
+                    estimated{" "}
+                    {perFrameCost == null
+                      ? "—"
+                      : `$${(count * perFrameCost).toFixed(5)}`}
+                  </ActionButton>
+                ))}
+                {(draft !== null ||
+                  choices.some((c) => c.prompt !== undefined)) && (
+                  <p>
+                    Reset edited prompts and return to current references to
+                    start a sequence.
+                  </p>
+                )}
+              </WorkspaceMenu>
+            )}
           </div>
         </ActionForm>
       </div>

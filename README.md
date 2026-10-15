@@ -470,6 +470,69 @@ composition row. CI's `scripts/check_storyboard.py` prints Journey C proofs for 
 references, per-frame snapshots, byte-exact exports, reorder refusals, soft deletion and
 restart persistence; the subsequent dump restore includes all these rows.
 
+## Chained storyboard frames
+
+Every storyboard frame after the first uses the previous live frame's image as its
+first reference, followed by its composition asset references and frame overrides.
+The previous frame's selected final wins; otherwise the first output of its latest
+finished run is used. A finished run has all models done (using the latest retry
+attempt of each model) and at least one output. Runs still waiting or failed never
+supply fallback images. The reference is resolved when queueing, with its hash,
+source frame, generation, output index and `final` or `first output` source retained
+in the immutable snapshot under role **previous frame**. It counts against each
+model's total references and object slot limit, and stays first in both renderers.
+The model prompt legend asks for continuous setting, lighting and characters.
+
+The inspector shows its thumbnail and **Use the previous frame**, on by default.
+Turn it off for that frame to generate independently. If no image is available,
+Generate proceeds without it and the bar explains why. Singles and first frames
+have no previous-frame reference. **Reuse settings** keeps the saved reference
+pinned even if a different final is subsequently picked.
+
+**Generate** remains the primary action for the selected frame. To test the start,
+select frame 1 and Generate. The adjacent **Sequence options** menu offers:
+
+- **Generate the full sequence**: first live frame through the end.
+- **Generate the next frame**: just the frame after the selected one.
+- **Generate the rest**: selected frame through the end; after a failed sequence,
+  starts at the failed frame. The API can omit the selected frame to start at the
+  first frame without a finished run.
+
+Each menu item shows its frame count and estimated cost (frames × the bar's
+per-frame cost). Actual costs can differ as continuity references become available.
+Sequences capture the bar's models, counts, format, quality and Advanced settings
+at start. They render each frame's current content when queueing; edited prompts
+and pinned drafts must be reset before starting. The filmstrip shows waiting,
+running, done, failed and stopped states. **Stop sequence** lets the current
+frame's models finish and stops before queueing another frame. A failure retains
+its error and stops advancement; **Generate the rest** creates a new sequence
+from that frame, preserving earlier attempts.
+
+Alembic 0012 adds `frame_sequences`, a nullable `generations.sequence_id`, and the
+default-on `variants.use_previous_frame`. Each sequence retains its ordered frames,
+run IDs, settings, model profiles, current index, states, timestamps and error.
+The completion hook queues the next run and its Procrastinate jobs in the same
+transaction as terminal completion. Composition locking and a partial unique index
+allow one active sequence per composition; the existing single worker and job
+library are unchanged. Downgrade restores U4's schema; production rollback uses a
+revert PR and restart, retaining new rows and immutable files.
+
+| Route | Behaviour |
+| --- | --- |
+| `/api/compositions/<id>/frame-sequences` | GET retained sequences; POST `mode` (`full`, `next`, `rest`), optional `frame_id`, `models`, optional `format` |
+| `/api/frame-sequences/<id>/stop` | POST stop after the current frame; repeat calls are harmless |
+| `/api/variants/<id>` | PATCH boolean `use_previous_frame` |
+
+Complete composition packages use **format_version 6**, adding retained sequences
+and previous-frame snapshot references; asset packages remain version 2. All
+referenced image files are included once. Exports stream without record or storage
+writes. CI's `check_chained_migration.py` proves unchanged U4 storyboards, runs and
+finals, upgrade twice and downgrade/reupgrade. `check_chained_frames.py` proves
+ordering, first-output/final resolution, single-frame runs, pinned reuse, limits,
+failure/resume, stop, next, singles and package contents against the placeholder.
+Postgres tests cover multi-model completion and queue refusals; Playwright covers
+menu costs, frame states, stop, thumbnail/switch, legend and missing-image notice.
+
 ## Portable packages and storage
 
 **Export asset** on an asset page downloads every attached image, including earlier
@@ -487,7 +550,7 @@ or rewriting image bytes. Import and permanent deletion are not available.
 
 Both portable package kinds contain one UTF-8 `manifest.json`. Its top-level
 `format` is `image-studio-asset` or `image-studio-composition`, `format_version`
-is `2` for assets and `5` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
+is `2` for assets and `6` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
 list of file records: `hash`, `media_type`, `size` (bytes), `width`, `height`,
 `stored_at`, and `filename`. Each file is the exact stored bytes at
 `files/<sha256>.<ext>`; extensions are `png`, `jpg` and `webp`. The SHA-256 of its
@@ -883,7 +946,7 @@ includes active packs of live project compositions, their style overrides, and
 project styles, including deleted assets. Inactive packs and deleted compositions
 are excluded. All earlier rows, snapshots and files remain unchanged. Downgrade
 removes only the new table to restore V1; production rollback uses a revert PR
-and restart to retain owner memberships. Composition packages remain version 5
+and restart to retain owner memberships. Composition packages now use version 6
 and contain no memberships; exports keep streaming without writes.
 
 CI's `check_project_assets_migration.py` proves the V1 backfill, unchanged prior

@@ -40,7 +40,7 @@ def validate_feedback(value, references):
         raise BadRequest("note must be text")
     if "asset_ratings" in value:
         ratings = value["asset_ratings"]
-        available = {r["asset_id"] for r in references}
+        available = {r["asset_id"] for r in references if r.get("asset_id") is not None}
         seen = set()
         if not isinstance(ratings, list):
             raise BadRequest("asset_ratings must be a list")

@@ -26,6 +26,7 @@ from image_studio.schema import (
     assets,
     composition_assets,
     compositions,
+    frame_sequences,
     generations,
     image_models,
     output_feedback,
@@ -137,11 +138,298 @@ def selected_final(connection, variant):
     }
 
 
+def finished_run(connection, frame_id):
+    """Latest complete run, considering only the last attempt of each model."""
+    rows = list(
+        connection.execute(
+            select(generations)
+            .where(generations.c.variant_id == frame_id)
+            .order_by(generations.c.id)
+        ).mappings()
+    )
+    runs = {}
+    for row in rows:
+        runs.setdefault(row["run_id"], []).append(row)
+    for run in reversed(list(runs.values())):
+        latest = {r["model"]: r for r in run}
+        if all(r["state"] == "done" for r in latest.values()):
+            output = next((r for r in latest.values() if r["outputs"]), None)
+            if output:
+                return output
+    return None
+
+
+def previous_image(connection, frame, comp):
+    if comp["kind"] != "storyboard":
+        return None
+    frames = live_frames(connection, comp["id"])
+    index = next(i for i, f in enumerate(frames) if f["id"] == frame["id"])
+    if index == 0:
+        return None
+    previous = frames[index - 1]
+    final = selected_final(connection, previous)
+    if final:
+        return previous_record(
+            connection, previous["id"], final["generation_id"], final["output"], "final"
+        )
+    row = finished_run(connection, previous["id"])
+    return (
+        previous_record(connection, previous["id"], row["id"], 0, "first output")
+        if row
+        else None
+    )
+
+
+def previous_record(connection, frame_id, generation_id, output, source):
+    row = get_row(connection, generations, generation_id)
+    file = (
+        connection.execute(
+            select(stored_files).where(stored_files.c.hash == row["outputs"][output])
+        )
+        .mappings()
+        .one()
+    )
+    return {
+        "hash": file["hash"],
+        "media_type": file["media_type"],
+        "asset_id": None,
+        "asset_name": "the previous frame",
+        "role": "previous frame",
+        "type": "other",
+        "description": "Keep its setting, lighting and characters continuous",
+        "frame_id": frame_id,
+        "generation_id": generation_id,
+        "output": output,
+        "source": source,
+    }
+
+
+def previous_reference(connection, frame, comp):
+    return (
+        previous_image(connection, frame, comp) if frame["use_previous_frame"] else None
+    )
+
+
+def validate_previous_reference(connection, ref):
+    if any(
+        type(ref.get(k)) is not int for k in ("frame_id", "generation_id", "output")
+    ) or ref.get("source") not in ("final", "first output"):
+        raise BadRequest("Invalid previous-frame reference")
+    row = get_row(connection, generations, ref["generation_id"])
+    if (
+        row["variant_id"] != ref["frame_id"]
+        or row["state"] != "done"
+        or not 0 <= ref["output"] < len(row["outputs"])
+        or row["outputs"][ref["output"]] != ref.get("hash")
+    ):
+        raise BadRequest(
+            "Previous-frame reference must identify a finished frame output"
+        )
+    return previous_record(
+        connection, ref["frame_id"], row["id"], ref["output"], ref["source"]
+    )
+
+
+@generation_api.route(
+    "/compositions/<int:identifier>/frame-sequences", methods=["GET", "POST"]
+)
+@transaction
+def sequences(connection, identifier):
+    comp = lock_composition(connection, identifier)
+    if request.method == "GET":
+        return jsonify(
+            [
+                serial(r)
+                for r in connection.execute(
+                    select(frame_sequences)
+                    .where(frame_sequences.c.composition_id == identifier)
+                    .order_by(frame_sequences.c.id.desc())
+                ).mappings()
+            ]
+        )
+    if comp["kind"] != "storyboard":
+        raise BadRequest("Sequences require a storyboard")
+    if connection.scalar(
+        select(frame_sequences.c.id).where(
+            frame_sequences.c.composition_id == identifier,
+            frame_sequences.c.state.in_(["running", "stopping"]),
+        )
+    ):
+        raise Conflict("A sequence is already running")
+    value = body(["mode", "frame_id", "models", "format"], ["mode", "models"])
+    choices = run_choices(value)
+    if any("prompt" in c for c in choices):
+        raise BadRequest("Sequences use rendered prompts; reset edited prompts first")
+    frames = live_frames(connection, identifier)
+    selected = value.get("frame_id")
+    if selected is not None and (
+        type(selected) is not int or selected not in [f["id"] for f in frames]
+    ):
+        raise BadRequest("Choose a live frame")
+    index = next((i for i, f in enumerate(frames) if f["id"] == selected), None)
+    if value["mode"] == "full":
+        index = 0
+    elif value["mode"] == "next":
+        if index is None or index + 1 == len(frames):
+            raise BadRequest("There is no next frame")
+        index += 1
+        frames = frames[: index + 1]
+    elif value["mode"] == "rest":
+        if index is None:
+            index = next(
+                (
+                    i
+                    for i, f in enumerate(frames)
+                    if not finished_run(connection, f["id"])
+                ),
+                len(frames),
+            )
+    else:
+        raise BadRequest("mode must be full, next or rest")
+    frames = frames[index:]
+    if not frames:
+        raise BadRequest("No frames remain")
+    profiles = {m["model_name"]: m["model_info"] for m in model_list(connection)}
+    settings = {"models": choices, "format": value.get("format"), "profiles": profiles}
+    entries = [
+        {"frame_id": f["id"], "state": "waiting", "run_id": None, "error": None}
+        for f in frames
+    ]
+    seq_id = connection.execute(
+        insert(frame_sequences)
+        .values(composition_id=identifier, frames=entries, settings=settings)
+        .returning(frame_sequences.c.id)
+    ).scalar_one()
+    run_id = queue_run(
+        connection, frames[0]["id"], settings, profiles=profiles, sequence_id=seq_id
+    )
+    # Normalize defaults once; every later frame gets exactly these settings.
+    queued = list(
+        connection.execute(
+            select(generations)
+            .where(generations.c.run_id == run_id)
+            .order_by(generations.c.id)
+        ).mappings()
+    )
+    settings["models"] = [
+        {"model": g["model"], "count": g["count"], "settings": g["settings"]}
+        for g in queued
+    ]
+    settings["format"] = queued[0]["settings"]["format"]
+    entries[0].update(state="running", run_id=run_id)
+    connection.execute(
+        update(frame_sequences)
+        .where(frame_sequences.c.id == seq_id)
+        .values(frames=entries, settings=settings)
+    )
+    return jsonify(serial(get_row(connection, frame_sequences, seq_id))), 201
+
+
+@generation_api.post("/frame-sequences/<int:identifier>/stop")
+@transaction
+def stop_sequence(connection, identifier):
+    row = get_row(connection, frame_sequences, identifier)
+    lock_composition(connection, row["composition_id"])
+    row = get_row(connection, frame_sequences, identifier)
+    if row["state"] in ("running", "stopping"):
+        connection.execute(
+            update(frame_sequences)
+            .where(frame_sequences.c.id == identifier)
+            .values(state="stopping")
+        )
+    return jsonify(serial(get_row(connection, frame_sequences, identifier)))
+
+
+def advance_sequence(connection, generation_id, root):
+    """Same transaction as terminal completion; locks serialize stop and advance."""
+    generation = get_row(connection, generations, generation_id)
+    if generation["sequence_id"] is None:
+        return
+    seq = get_row(connection, frame_sequences, generation["sequence_id"])
+    connection.execute(
+        select(compositions.c.id)
+        .where(compositions.c.id == seq["composition_id"])
+        .with_for_update()
+    )
+    seq = get_row(connection, frame_sequences, seq["id"])
+    if seq["state"] not in ("running", "stopping"):
+        return
+    entries = [dict(f) for f in seq["frames"]]
+    index = seq["current_frame"]
+    entry = entries[index]
+    if entry["run_id"] != generation["run_id"]:
+        return
+    rows = list(
+        connection.execute(
+            select(generations).where(generations.c.run_id == entry["run_id"])
+        ).mappings()
+    )
+    if any(g["state"] in ("waiting", "running") for g in rows):
+        return
+    error = next(
+        (
+            g["error"] or "Frame generation failed"
+            for g in rows
+            if g["state"] == "failed"
+        ),
+        None,
+    )
+    entry.update(state="failed" if error else "done", error=error)
+    state = "failed" if error else "stopped" if seq["state"] == "stopping" else "done"
+    if not error and seq["state"] == "running" and index + 1 < len(entries):
+        index += 1
+        try:
+            # A refusal must leave no partial run or jobs, but retain sequence error.
+            with connection.begin_nested():
+                live_variant(connection, entries[index]["frame_id"])
+                run_id = queue_run(
+                    connection,
+                    entries[index]["frame_id"],
+                    seq["settings"],
+                    profiles=seq["settings"]["profiles"],
+                    sequence_id=seq["id"],
+                    root=root,
+                )
+            entries[index].update(state="running", run_id=run_id)
+            state = "running"
+        except (BadRequest, NotFound, OSError) as failure:
+            error = (
+                failure.description
+                if isinstance(failure, (BadRequest, NotFound))
+                else "Could not read an image file"
+            )
+            entries[index].update(state="failed", error=error)
+            state = "failed"
+    if state == "stopped":
+        for waiting in entries[index + 1 :]:
+            waiting["state"] = "stopped"
+    connection.execute(
+        update(frame_sequences)
+        .where(frame_sequences.c.id == seq["id"])
+        .values(
+            frames=entries,
+            state=state,
+            current_frame=index,
+            error=error,
+            finished_at=func.now() if state != "running" else None,
+        )
+    )
+
+
 def variant_preview(connection, identifier):
     variant = live_variant(connection, identifier)
     comp = composition(connection, variant["composition_id"])
     project = composition_project(connection, comp)
-    return assemble(project, comp, selected_assets(connection, comp), variant)
+    return {
+        **assemble(
+            project,
+            comp,
+            selected_assets(connection, comp),
+            variant,
+            previous_reference(connection, variant, comp),
+        ),
+        "previous_frame": previous_image(connection, variant, comp),
+    }
 
 
 def detail(connection, identifier):
@@ -169,6 +457,14 @@ def detail(connection, identifier):
     result["variants"] = [
         {**serial(r), "final": selected_final(connection, r)}
         for r in live_frames(connection, identifier)
+    ]
+    result["sequences"] = [
+        serial(r)
+        for r in connection.execute(
+            select(frame_sequences)
+            .where(frame_sequences.c.composition_id == identifier)
+            .order_by(frame_sequences.c.id.desc())
+        ).mappings()
     ]
     return result
 
@@ -414,6 +710,7 @@ def duplicate_composition(connection, identifier):
                     for k in (
                         "name",
                         "instructions",
+                        "use_previous_frame",
                         "position",
                         "deselected_images",
                         "selected_originals",
@@ -609,9 +906,19 @@ def edit_variant(connection, identifier):
         )
         return jsonify(deleted=True)
     value = text_fields(
-        body(["name", "instructions", "deselected_images", "selected_originals"]),
+        body(
+            [
+                "name",
+                "instructions",
+                "deselected_images",
+                "selected_originals",
+                "use_previous_frame",
+            ]
+        ),
         ["name", "instructions"],
     )
+    if "use_previous_frame" in value and type(value["use_previous_frame"]) is not bool:
+        raise BadRequest("use_previous_frame must be a boolean")
     if {"deselected_images", "selected_originals"} & value.keys():
         selections = selected_assets(
             connection, composition(connection, variant["composition_id"])
@@ -710,22 +1017,26 @@ def preview(connection, identifier):
     comp["brief"] = value["brief"]
     variant["instructions"] = value["instructions"]
     return jsonify(
-        assemble(
-            composition_project(connection, comp),
-            comp,
-            selected_assets(connection, comp),
-            variant,
-        )
+        {
+            **assemble(
+                composition_project(connection, comp),
+                comp,
+                selected_assets(connection, comp),
+                variant,
+                previous_reference(connection, variant, comp),
+            ),
+            "previous_frame": previous_image(connection, variant, comp),
+        }
     )
 
 
-def reference_snapshot(refs, info):
-    root = current_app.config["STUDIO_FILES"]
+def reference_snapshot(refs, info, root=None):
+    root = root if root is not None else current_app.config["STUDIO_FILES"]
     return [{**ref, "sent_size": prepare_reference(root, ref, info)[2]} for ref in refs]
 
 
-def snapshot_references(values, info):
-    values["references"] = reference_snapshot(values["references"], info)
+def snapshot_references(values, info, root=None):
+    values["references"] = reference_snapshot(values["references"], info, root)
     sizes = {r["hash"]: r["sent_size"] for r in values["references"]}
     values["shared_references"] = [
         {**r, "sent_size": sizes[r["hash"]]} for r in values["shared_references"]
@@ -856,6 +1167,39 @@ def draft_references(connection, supplied):
         raise BadRequest("references must be an ordered list")
     result = []
     for ref in supplied:
+        if isinstance(ref, dict) and ref.get("role") == "previous frame":
+            saved = connection.execute(
+                select(generations.c.shared_references, generations.c.references)
+                .where(
+                    generations.c.references.contains(
+                        [{"hash": ref.get("hash"), "role": "previous frame"}]
+                    )
+                )
+                .order_by(generations.c.id)
+            ).mappings()
+            match = next(
+                (
+                    r
+                    for row in saved
+                    for r in (row["shared_references"] or row["references"])
+                    if r.get("role") == "previous frame"
+                    and all(
+                        r.get(k) == ref.get(k)
+                        for k in (
+                            "hash",
+                            "frame_id",
+                            "generation_id",
+                            "output",
+                            "source",
+                        )
+                    )
+                ),
+                None,
+            )
+            if match is None:
+                match = validate_previous_reference(connection, ref)
+            result.append(match)
+            continue
         if (
             not isinstance(ref, dict)
             or not isinstance(ref.get("hash"), str)
@@ -893,7 +1237,10 @@ def draft_references(connection, supplied):
                 "role": ref["role"],
             }
         )
-    return result
+    previous = [r for r in result if r.get("role") == "previous frame"]
+    if len(previous) > 1:
+        raise BadRequest("A run can use only one previous-frame reference")
+    return previous + [r for r in result if r.get("role") != "previous frame"]
 
 
 def run_detail(connection, variant_id, run_id):
@@ -937,6 +1284,13 @@ def variant_runs(connection, identifier):
         return jsonify([run_detail(connection, identifier, r.run_id) for r in run_ids])
     live_variant(connection, identifier)
     value = body(["models", "prompt", "references", "content", "format"], ["models"])
+    run_id = queue_run(connection, identifier, value)
+    return jsonify(run_detail(connection, identifier, run_id)), 201
+
+
+def queue_run(
+    connection, identifier, value, *, profiles=None, sequence_id=None, root=None
+):
     choices = run_choices(value)
     if "references" in value:
         refs = draft_references(connection, value["references"])
@@ -946,7 +1300,21 @@ def variant_runs(connection, identifier):
         refs, content = preview["references"], preview["prompt"]
     if not isinstance(content, str) or not content.strip():
         raise BadRequest("content must be nonempty text")
-    available = {m["model_name"]: m["model_info"] for m in model_list(connection)}
+    available = (
+        profiles
+        if profiles is not None
+        else {m["model_name"]: m["model_info"] for m in model_list(connection)}
+    )
+    if any(r.get("role") == "previous frame" for r in refs):
+        frame = live_variant(connection, identifier)
+        comp = composition(connection, frame["composition_id"])
+        if (
+            comp["kind"] != "storyboard"
+            or live_frames(connection, comp["id"])[0]["id"] == identifier
+        ):
+            raise BadRequest(
+                "Singles and first frames cannot use a previous-frame reference"
+            )
     prepared = []
     ratio = value.get("format")
     for choice in choices:
@@ -973,7 +1341,7 @@ def variant_runs(connection, identifier):
             choice.get("prompt", value.get("prompt")),
             ratio,
         )
-        snapshot_references(values, info)
+        snapshot_references(values, info, root)
         prepared.append((choice, info, values))
     run_id = str(uuid4())
     for choice, info, values in prepared:
@@ -981,6 +1349,7 @@ def variant_runs(connection, identifier):
             insert(generations)
             .values(
                 run_id=run_id,
+                sequence_id=sequence_id,
                 kind="composition",
                 variant_id=identifier,
                 model=choice["model"],
@@ -992,7 +1361,7 @@ def variant_runs(connection, identifier):
             .returning(generations.c.id)
         ).scalar_one()
         defer(connection, row_id)
-    return jsonify(run_detail(connection, identifier, run_id)), 201
+    return run_id
 
 
 @generation_api.post("/generations/<int:identifier>/retry")
@@ -1013,6 +1382,7 @@ def retry_generation(connection, identifier):
         "variant_id",
         "asset_id",
         "run_id",
+        "sequence_id",
         "model",
         "model_info",
         "prompt",

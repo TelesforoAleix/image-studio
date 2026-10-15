@@ -20,6 +20,7 @@ export function CompositionSetup({
   setDraft,
   current,
   projectName,
+  previousFrame,
 }) {
   const helpId = useId();
   const [picker, setPicker] = useState(false);
@@ -257,6 +258,40 @@ export function CompositionSetup({
       {field("brief", "Brief", 5, guidance[comp.kind])}
       {comp.kind === "storyboard" && (
         <>
+          {comp.variants[0]?.id !== variant.id && (
+            <div className="previous-frame-reference">
+              <label>
+                <ActionInput
+                  type="checkbox"
+                  checked={variant.use_previous_frame !== false}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    act(async () => {
+                      await autosave.flush();
+                      await api(`/variants/${variant.id}`, "PATCH", {
+                        use_previous_frame: enabled,
+                      });
+                      setComp(await api(`/compositions/${comp.id}`));
+                    });
+                  }}
+                />
+                Use the previous frame
+              </label>
+              {previousFrame ? (
+                <figure>
+                  <img
+                    src={`/api/files/${previousFrame.hash}`}
+                    alt="Previous frame reference"
+                  />
+                  <figcaption>
+                    Previous frame · {previousFrame.source}
+                  </figcaption>
+                </figure>
+              ) : (
+                <p>No previous-frame image available yet.</p>
+              )}
+            </div>
+          )}
           {field("frameName", "Frame name")}
           {field(
             "instructions",

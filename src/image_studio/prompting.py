@@ -23,12 +23,12 @@ def chosen_images(images, selection, variant):
     return [i for i in refs + extra if i["id"] not in excluded]
 
 
-def assemble(project, composition, selections, variant):
+def assemble(project, composition, selections, variant, previous=None):
     parts = [
         project["instructions"] if project else "",
         composition["brief"],
     ]
-    references = []
+    references = [previous] if previous else []
     lines = []
     for asset, selection, images in selections:
         numbers = []
