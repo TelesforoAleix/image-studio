@@ -72,6 +72,7 @@ async function mock(page, initial = "done") {
     let value;
     if (path === "/projects") value = [project];
     else if (path === "/projects/1") value = project;
+    else if (path === "/projects/1/assets") value = [];
     else if (path.startsWith("/assets?")) value = [];
     else if (path === "/assets") value = [];
     else if (path === "/assets/1/reference-preview")
@@ -489,6 +490,7 @@ test("single and storyboard fields and every guidance tooltip support hover, foc
     "Don't repeat the brief.",
   );
   await page.goto("/#projects");
+  await page.getByRole("button", { name: "New project", exact: true }).click();
   await proveHelp(
     page,
     "Creative direction",

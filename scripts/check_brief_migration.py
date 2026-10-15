@@ -93,7 +93,7 @@ def main():
                 "brief": "\n\n".join(p for p in parts if p),
             }
         )
-    command.upgrade(config, "head")
+    command.upgrade(config, "0010")
     after = snapshot(engine)
     assert sorted(after["compositions"], key=lambda r: r["id"]) == sorted(
         expected, key=lambda r: r["id"]
@@ -117,7 +117,7 @@ def main():
             assert preview.status_code == 200, preview.json
             assert preview.json["prompt"] == old_text
     app.extensions["database"].dispose()
-    command.upgrade(config, "head")
+    command.upgrade(config, "0010")
     assert snapshot(engine) == after
     command.downgrade(config, "0009")
     restored = snapshot(engine)
@@ -135,8 +135,8 @@ def main():
     assert {k: v for k, v in restored.items() if k != "compositions"} == {
         k: v for k, v in after.items() if k != "compositions"
     }
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0010")
+    command.upgrade(config, "0010")
     assert snapshot(engine) == after
     print(
         "PROOF BRIEF: U3 singles/storyboard/empty, hidden frames, snapshots/finals; "

@@ -6,7 +6,7 @@ from decimal import Decimal
 from functools import wraps
 
 from flask import Blueprint, current_app, jsonify, request, send_file
-from sqlalchemy import insert, select, update
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
 
@@ -17,6 +17,7 @@ from image_studio.schema import (
     composition_assets,
     compositions,
     generations,
+    project_assets,
     projects,
     stored_files,
 )
@@ -169,6 +170,83 @@ def payload(connection, *, asset=False, creating=False):
     return body
 
 
+def add_project_asset(connection, project_id, asset_id):
+    """Idempotent membership; re-adding revives the retained row."""
+    connection.execute(
+        pg_insert(project_assets)
+        .values(project_id=project_id, asset_id=asset_id)
+        .on_conflict_do_update(
+            index_elements=["project_id", "asset_id"],
+            set_={"removed_at": None, "added_at": func.now()},
+            where=project_assets.c.removed_at.is_not(None),
+        )
+    )
+
+
+def asset_thumbnail():
+    references = (
+        select(asset_images.c.file_hash)
+        .where(
+            asset_images.c.asset_id == assets.c.id,
+            asset_images.c.approved.is_(True),
+            asset_images.c.rejected.is_(False),
+        )
+        .order_by(asset_images.c.id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    originals = (
+        select(asset_images.c.file_hash)
+        .where(
+            asset_images.c.asset_id == assets.c.id,
+            asset_images.c.source == "uploaded",
+            asset_images.c.rejected.is_(False),
+        )
+        .order_by(asset_images.c.id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    return func.coalesce(references, originals).label("thumbnail")
+
+
+@api.get("/projects/<int:identifier>/assets")
+@transaction
+def list_project_assets(connection, identifier):
+    get_row(connection, projects, identifier)
+    query = (
+        select(assets, project_assets.c.added_at, asset_thumbnail())
+        .join(project_assets, project_assets.c.asset_id == assets.c.id)
+        .where(
+            project_assets.c.project_id == identifier,
+            project_assets.c.removed_at.is_(None),
+        )
+        .order_by(project_assets.c.added_at, assets.c.id)
+    )
+    return jsonify([serial(row) for row in connection.execute(query).mappings()])
+
+
+@api.route(
+    "/projects/<int:identifier>/assets/<int:asset_id>", methods=["PUT", "DELETE"]
+)
+@transaction
+def project_asset(connection, identifier, asset_id):
+    get_row(connection, projects, identifier)
+    get_row(connection, assets, asset_id, deleted=request.method == "DELETE")
+    if request.method == "PUT":
+        add_project_asset(connection, identifier, asset_id)
+    else:
+        connection.execute(
+            update(project_assets)
+            .where(
+                project_assets.c.project_id == identifier,
+                project_assets.c.asset_id == asset_id,
+                project_assets.c.removed_at.is_(None),
+            )
+            .values(removed_at=func.now())
+        )
+    return jsonify(saved=True)
+
+
 @api.get("/projects")
 @transaction
 def list_projects(connection):
@@ -194,6 +272,8 @@ def create_project(connection):
         .mappings()
         .one()
     )
+    if row["style_asset_id"] is not None:
+        add_project_asset(connection, row["id"], row["style_asset_id"])
     return jsonify(serial(row)), 201
 
 
@@ -212,6 +292,8 @@ def update_project(connection, identifier):
         connection.execute(
             update(projects).where(projects.c.id == identifier).values(**values)
         )
+    if values.get("style_asset_id") is not None:
+        add_project_asset(connection, identifier, values["style_asset_id"])
     return jsonify(serial(get_row(connection, projects, identifier)))
 
 
@@ -219,6 +301,10 @@ def update_project(connection, identifier):
 @transaction
 def list_assets(connection):
     query = select(assets).order_by(assets.c.id)
+    if request.args.get("thumbnails") == "true":
+        query = query.add_columns(asset_thumbnail())
+    if request.args.get("q"):
+        query = query.where(assets.c.name.icontains(request.args["q"], autoescape=True))
     if not include_deleted():
         query = query.where(assets.c.deleted_at.is_(None))
     if "type" in request.args:

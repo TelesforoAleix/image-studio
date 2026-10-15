@@ -8,7 +8,14 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from werkzeug.exceptions import BadRequest, Conflict, NotFound, ServiceUnavailable
 
-from image_studio.api import get_row, images_for, serial, transaction, validate_style
+from image_studio.api import (
+    add_project_asset,
+    get_row,
+    images_for,
+    serial,
+    transaction,
+    validate_style,
+)
 from image_studio.feedback import generation_record, model_tallies, validate_feedback
 from image_studio.image_client import prepare_reference
 from image_studio.jobs import defer
@@ -249,6 +256,10 @@ def summaries(connection, project_id=None, *, filtered=False):
     query = select(compositions).where(compositions.c.deleted_at.is_(None))
     if filtered:
         query = query.where(compositions.c.project_id == project_id)
+    if request.args.get("q"):
+        query = query.where(
+            compositions.c.name.icontains(request.args["q"], autoescape=True)
+        )
     result = []
     for row in connection.execute(query).mappings():
         frames = live_frames(connection, row["id"])
@@ -273,6 +284,7 @@ def summaries(connection, project_id=None, *, filtered=False):
                 **serial(row),
                 "project": serial(project) if project else None,
                 "thumbnail": thumbnail,
+                "frame_count": len(frames),
                 "last_activity": activity.isoformat(),
             }
         )
@@ -292,6 +304,8 @@ def new_composition(connection, value):
     identifier = connection.execute(
         insert(compositions).values(**value).returning(compositions.c.id)
     ).scalar_one()
+    if value.get("project_id") is not None and value.get("style_asset_id") is not None:
+        add_project_asset(connection, value["project_id"], value["style_asset_id"])
     connection.execute(insert(variants).values(composition_id=identifier))
     return jsonify(detail(connection, identifier)), 201
 
@@ -364,6 +378,10 @@ def duplicate_composition(connection, identifier):
     copied = connection.execute(
         insert(compositions).values(**values).returning(compositions.c.id)
     ).scalar_one()
+    if original["project_id"] is not None and original["style_asset_id"] is not None:
+        add_project_asset(
+            connection, original["project_id"], original["style_asset_id"]
+        )
     for selection in connection.execute(
         select(composition_assets)
         .where(composition_assets.c.composition_id == identifier)
@@ -385,6 +403,8 @@ def duplicate_composition(connection, identifier):
                 },
             )
         )
+        if selection["active"] and original["project_id"] is not None:
+            add_project_asset(connection, original["project_id"], selection["asset_id"])
     for frame in live_frames(connection, identifier):
         connection.execute(
             insert(variants).values(
@@ -452,13 +472,16 @@ def edit_composition(connection, identifier):
                 .where(compositions.c.id == identifier)
                 .values(**value)
             )
+        comp = composition(connection, identifier)
+        if comp["project_id"] is not None and value.get("style_asset_id") is not None:
+            add_project_asset(connection, comp["project_id"], value["style_asset_id"])
     return jsonify(detail(connection, identifier))
 
 
 @generation_api.put("/compositions/<int:identifier>/assets/<int:asset_id>")
 @transaction
 def select_asset(connection, identifier, asset_id):
-    composition(connection, identifier)
+    comp = lock_composition(connection, identifier)
     asset = get_row(connection, assets, asset_id)
     if asset["type"] == "style":
         raise BadRequest("A Style asset cannot be a pack subject")
@@ -501,6 +524,8 @@ def select_asset(connection, identifier, asset_id):
             constraint="one_asset_per_composition", set_={**value, "active": True}
         )
     )
+    if comp["project_id"] is not None:
+        add_project_asset(connection, comp["project_id"], asset_id)
     return jsonify(detail(connection, identifier))
 
 

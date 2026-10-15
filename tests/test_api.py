@@ -67,6 +67,7 @@ def test_migration_is_idempotent_and_matches_definitions(client):
     _, engine, _ = client
     assert set(inspect(engine).get_table_names()) == {
         "projects",
+        "project_assets",
         "assets",
         "stored_files",
         "asset_images",
@@ -84,7 +85,7 @@ def test_migration_is_idempotent_and_matches_definitions(client):
             connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
             ).scalar_one()
-            == "0010"
+            == "0011"
         )
 
 

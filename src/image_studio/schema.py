@@ -48,6 +48,16 @@ assets = Table(
     ),
     Column("deleted_at", DateTime(timezone=True)),
 )
+project_assets = Table(
+    "project_assets",
+    metadata,
+    Column("project_id", ForeignKey("projects.id"), primary_key=True),
+    Column("asset_id", ForeignKey("assets.id"), primary_key=True),
+    Column(
+        "added_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
+    Column("removed_at", DateTime(timezone=True)),
+)
 stored_files = Table(
     "stored_files",
     metadata,
