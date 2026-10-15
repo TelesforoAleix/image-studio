@@ -36,8 +36,8 @@ def main():
     engine = database_engine(os.environ["DATABASE_URL"])
     before = snapshot(engine)
     assert before["generations"], "Proof requires existing R3-era runs"
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0009")
+    command.upgrade(config, "0009")
     assert snapshot(engine) == before
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM output_feedback")) == 0
@@ -51,8 +51,8 @@ def main():
     assert "output_feedback" not in inspect(engine).get_table_names()
     assert snapshot(engine) == before
     print("PROOF FEEDBACK MIGRATION downgrade restores R3 unchanged", flush=True)
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0009")
+    command.upgrade(config, "0009")
     assert snapshot(engine) == before
     engine.dispose()
 

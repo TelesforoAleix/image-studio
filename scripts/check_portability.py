@@ -16,7 +16,7 @@ def package(path):
     with ZipFile(io.BytesIO(data)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["format_version"] == (
-            4 if manifest["format"] == "image-studio-composition" else 2
+            5 if manifest["format"] == "image-studio-composition" else 2
         )
         assert manifest["exported_at"]
         assert len(archive.namelist()) == 1 + len(manifest["files"])
@@ -108,7 +108,7 @@ def main():
         "POST",
         {
             "name": "Synthetic portable composition",
-            "scene": "Synthetic scene",
+            "brief": "Synthetic scene",
             "kind": "storyboard",
         },
         status=201,
@@ -184,7 +184,7 @@ def prove_exports(project, asset, first, comp, frames, done, final):
     assert package(apath)["asset"] == {**deleted, "project_id": None}
     complete = package(cpath)
     assert complete["project"] == project
-    assert complete["composition"]["scene"] == comp["scene"]
+    assert complete["composition"]["brief"] == comp["brief"]
     assert complete["asset_pack"][0]["asset"]["deleted_at"] == deleted["deleted_at"]
     assert [f["id"] for f in complete["frames"]] == [f["id"] for f in frames]
     assert all(not f["deleted"] for f in complete["frames"])

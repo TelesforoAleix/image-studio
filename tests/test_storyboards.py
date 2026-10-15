@@ -85,7 +85,7 @@ def test_storyboard_journey(generation_client):
         )
         preview = c.post(
             vpath + "/preview",
-            json={"scene": "Draft scene", "instructions": "Draft action"},
+            json={"brief": "Draft scene", "instructions": "Draft action"},
         ).json
         assert preview["prompt"].endswith("Draft action")
         assert len(preview["references"]) == (1 if index == 1 else 2)
@@ -256,10 +256,11 @@ def test_s5_migration_with_run_and_final_twice(monkeypatch):
             after = list(connection.execute(select(generations)).mappings())
             assert [{key: row[key] for key in before[0]} for row in after] == before
             assert all(row["service_failures"] == 0 for row in after)
+            assert connection.scalar(text("SELECT brief FROM compositions")) == "Action"
             frame = connection.execute(select(variants)).mappings().one()
             assert frame["deleted_at"] is None and frame["deselected_images"] == []
             assert (
-                frame["instructions"] == "Action"
+                frame["instructions"] == ""
                 and frame["final_generation_id"] == 1
                 and frame["final_output"] == 0
             )
@@ -308,7 +309,7 @@ def test_frame_deselections_renumber_without_changing_shared_pack():
     selection = {"role": "Subject", "deselected_images": [2]}
     preview = assemble(
         {"instructions": "Direction"},
-        {"scene": "Scene"},
+        {"brief": "Scene"},
         [(asset, selection, images)],
         {"instructions": "Action", "deselected_images": [1]},
     )

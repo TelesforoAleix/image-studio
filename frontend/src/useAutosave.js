@@ -5,8 +5,7 @@ import { api } from "./api";
 export function useAutosave(composition, frame, setComp) {
   const initial = {
     name: composition.name,
-    direction: composition.direction,
-    scene: composition.scene,
+    brief: composition.brief,
     frameName: frame.name,
     instructions: frame.instructions,
   };
@@ -120,7 +119,7 @@ export function useAutosave(composition, frame, setComp) {
         s = saved.current;
       const comp = {},
         variant = {};
-      for (const key of ["name", "direction", "scene"])
+      for (const key of ["name", "brief"])
         if (v[key] !== s[key]) comp[key] = v[key];
       for (const key of ["frameName", "instructions"])
         if (v[key] !== s[key])

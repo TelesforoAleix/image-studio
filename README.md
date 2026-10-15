@@ -104,10 +104,11 @@ inline deletion. Storyboards have a final-thumbnail filmstrip: drag frames to
 reorder, use the move buttons, or press Alt+Left/Right on a focused frame link.
 
 The left inspector holds compact expandable asset and style rows, a searchable
-asset picker, direction and scene. Text fields save after 450 ms of idle typing,
+asset picker and a Brief. Singles show only the Brief and style picker for
+creative text. Text fields save after 450 ms of idle typing,
 with local Saving/Saved feedback; navigation and generation flush pending saves.
-Storyboards also expose frame name/instructions and collapsed frame-only reference
-overrides. Reference totals name each model's total or slot limit when exceeded.
+Storyboards also expose frame name, **What happens in this frame**, and collapsed
+frame-only reference overrides. Reference totals name each model's total or slot limit when exceeded.
 
 The centre shows one selected run with model columns, progress, retry, finals and
 quick/detailed feedback. The earlier-runs strip changes the shown run without
@@ -249,10 +250,11 @@ unlock chain untouched.
 ## First generation
 
 Compositions optionally belong to projects, each starting with a variant named **Frame 1**. Add global
-assets with a role, toggle their approved reference images, and write scene and
-frame instructions. The fixed shared template combines project instructions (when
-present), composition direction, style, scene, asset roles/names/types/descriptions
-and preservation rules, then frame instructions. Empty parts are omitted; past
+assets with a role, toggle their approved reference images, and write a composition
+brief. Storyboards also have text describing what happens in each frame. The fixed
+shared template combines the project's creative direction (when present), the brief,
+the Style line, asset roles/names/types/descriptions and preservation rules, then
+the frame's text (storyboards only). Empty parts are omitted; past
 snapshots are never rewritten. Each model's preview renders this shared intent and
 ordered references in its family's notation. Edit replaces only that model's
 prompt; Reset restores its rendering. Choose one to three image models, each with
@@ -352,13 +354,13 @@ Additional API routes:
 | Routes | Methods / behaviour |
 | --- | --- |
 | `/api/models` | GET image models and endpoint-supplied capabilities |
-| `/api/compositions` | GET compact summaries; optional `project_id=<id>` or `none`; POST create (`name`, `kind`, optional `project_id`, `direction`, `scene`) with Frame 1 |
-| `/api/projects/<id>/compositions` | GET same summaries for project; POST create (`name`, optional `kind`, `direction`, `scene`) in project with Frame 1 (default single) |
+| `/api/compositions` | GET compact summaries; optional `project_id=<id>` or `none`; POST create (`name`, `kind`, optional `project_id`, `brief`) with Frame 1 |
+| `/api/projects/<id>/compositions` | GET same summaries for project; POST create (`name`, optional `kind`, `brief`) in project with Frame 1 (default single) |
 | `/api/compositions/<id>/duplicate` | POST copy fields, retained pack and live frames without history or finals |
-| `/api/compositions/<id>` | GET detail, PATCH name/scene/direction/kind/project_id, DELETE soft-delete |
+| `/api/compositions/<id>` | GET detail, PATCH name/brief/kind/project_id, DELETE soft-delete |
 | `/api/compositions/<id>/assets/<asset-id>` | PUT role and `deselected_images` IDs; DELETE deactivates selection |
 | `/api/variants/<id>` | GET by ID (including hidden frames); PATCH name, instructions or frame deselections; DELETE soft-delete |
-| `/api/variants/<id>/preview` | GET saved preview; POST preview draft optional `direction`, required `scene` and `instructions` without saving |
+| `/api/variants/<id>/preview` | GET saved preview; POST preview draft required `brief` and `instructions` without saving |
 | `/api/variants/<id>/generations` | GET history, POST queue (`model`, `count`, optional replacement `prompt`) |
 | `/api/assets/<id>/reference-preview` | GET fixed reference-view prompt and uploaded references |
 | `/api/assets/<id>/generations` | GET history, POST queue reference views |
@@ -416,7 +418,7 @@ A storyboard's ordered frame strip sits in the composition header. Add frame cre
 Frame N; rename it in the inspector. Drag, Alt+Left/Right, or Move up / Move down
 changes the sequence. Deletion asks inline and hides the frame with its runs and final. At least one live frame remains;
 generations, finals and immutable files remain readable by ID. Every frame uses one
-shared asset pack and scene, with its own instructions and optional reference
+shared asset pack and brief, with its own instructions and optional reference
 deselections. Shared edits affect later previews and runs; past snapshots and reused
 pinned drafts stay intact.
 
@@ -461,7 +463,7 @@ or rewriting image bytes. Import and permanent deletion are not available.
 
 Both portable package kinds contain one UTF-8 `manifest.json`. Its top-level
 `format` is `image-studio-asset` or `image-studio-composition`, `format_version`
-is `2` for assets and `4` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
+is `2` for assets and `5` for compositions, and `exported_at` is an ISO 8601 UTC timestamp. `files` is a deduplicated
 list of file records: `hash`, `media_type`, `size` (bytes), `width`, `height`,
 `stored_at`, and `filename`. Each file is the exact stored bytes at
 `files/<sha256>.<ext>`; extensions are `png`, `jpg` and `webp`. The SHA-256 of its
@@ -480,7 +482,7 @@ records contain `id`, `asset_id`, `file_hash`, `approved`, `rejected`, `source`,
 The complete composition manifest adds:
 
 - `project`: null for stand-alone compositions, otherwise `id`, `name`, `instructions`, `created_at`.
-- `composition`: `id`, nullable `project_id`, `name`, `kind`, `direction`, `scene`, `created_at`, `deleted_at`.
+- `composition`: `id`, nullable `project_id`, `name`, `kind`, `brief`, `created_at`, `deleted_at`.
 - `asset_pack`: retained selections in position/ID order, with `id`,
   `composition_id`, `asset_id`, `role`, `position`, `deselected_images`, `active`,
   and `asset`. Asset records have the same fields as the asset package but only
@@ -580,8 +582,8 @@ The style's References come first in request order, with role `style reference`;
 subjects follow pack order. Style references can be switched off per composition
 and per frame and count against each model's `max_references`.
 
-The fixed template is project instructions, composition direction, the optional
-style line, scene, one line per subject, then frame instructions. Empty parts are
+The fixed template is project creative direction, the composition brief, the optional
+Style line, one line per subject, then the frame text (storyboards only). Empty parts are
 omitted. Subject lines are `role: name (Type) — description`, followed by
 `Keep: <preserve>` when nonempty and the ordered reference numbers. The style line
 is `Style: <name> — <description>`, followed by its optional `Keep: <preserve>` and
@@ -626,8 +628,8 @@ inheritance/replacement/deletion, both package versions and unchanged snapshots.
 
 ## Per-model requests and run settings
 
-The shared R2 template remains project instructions, direction, style, scene,
-subject lines with preservation rules, then frame instructions. Rendering is
+The shared template is project creative direction, brief, style, subject lines
+with preservation rules, then storyboard frame text. Rendering is
 fixed and deterministic in the studio; no model rewrites it. `openai` puts a
 numbered `Image 1: <name>, <role>, <type>` legend before the content. `gemini`
 puts content before the legend and stably orders Person references first, then
@@ -801,3 +803,23 @@ and restore, remembered settings, full-set drag/keyboard ordering, reference lim
 keyboard menus, old-route redirects and autosave flushing/failures. Playwright is
 an Apache-2.0 dev
 dependency; no screenshots, traces, image fixtures or owner records are retained.
+
+## Brief and field help
+
+A single composition uses **Brief** for what the image shows and how it should
+feel. A storyboard uses **Brief** for the whole story and its shared look; each
+selected frame has a name and **What happens in this frame** for its action, pose
+and framing. Projects keep **Creative direction** unchanged. An ⓘ beside Creative
+direction, Brief, What happens in this frame, Role, Style, Description and What
+must stay the same opens guidance and examples on hover or keyboard focus; Escape
+closes the tooltip.
+
+Alembic 0010 replaces composition `direction` and `scene` with `brief`, joining
+nonempty direction then scene with a blank line. For singles it appends the live
+frame's instructions and clears that frame text. Storyboard and hidden-frame text,
+rows, history, finals and immutable files remain retained. Upgrade is repeatable;
+downgrade restores `scene` from the brief and empty `direction`, preserving text.
+Past generation snapshots are never rewritten. Composition packages now use
+**format_version 5** with `brief` in place of `direction` and `scene`; asset
+packages remain version 2. The CI migration proof exercises U3 populated and empty
+compositions, runs and finals, two upgrades, downgrade and re-upgrade.

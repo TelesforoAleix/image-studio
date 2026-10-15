@@ -46,7 +46,7 @@ def snapshot(function):
 def manifest(kind):
     return {
         "format": f"image-studio-{kind}",
-        "format_version": 4 if kind == "composition" else 2,
+        "format_version": 5 if kind == "composition" else 2,
         "exported_at": datetime.now(UTC).isoformat(),
     }
 

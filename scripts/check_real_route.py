@@ -43,7 +43,7 @@ def main():
     comp = request(
         f"/api/projects/{project['id']}/compositions",
         "POST",
-        {"name": "Synthetic two shapes", "scene": "Synthetic scene"},
+        {"name": "Synthetic two shapes", "brief": "Synthetic scene"},
         status=201,
     )
     request(

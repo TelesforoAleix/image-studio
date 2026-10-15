@@ -58,7 +58,7 @@ def setup_composition(c):
     ).json
     comp = c.post(
         f"/api/projects/{project['id']}/compositions",
-        json={"name": "Synthetic scene", "scene": "Scene", "kind": "storyboard"},
+        json={"name": "Synthetic scene", "brief": "Scene", "kind": "storyboard"},
     ).json
     asset = new_asset(c, description="Description")
     asset = upload(

@@ -59,8 +59,7 @@ async function workspace(page, { empty = false, references = [] } = {}) {
       name: "Synthetic composition",
       project_id: 1,
       kind: "storyboard",
-      direction: "",
-      scene: "Synthetic scene",
+      brief: "Synthetic scene",
       assets: [],
       style: null,
       style_deselected_images: [],
@@ -162,7 +161,7 @@ async function workspace(page, { empty = false, references = [] } = {}) {
       value = { prompt: "Synthetic reference", references: [] };
     else if (path.endsWith("/preview"))
       value = {
-        prompt: req.postDataJSON().scene,
+        prompt: req.postDataJSON().brief,
         references: state.references,
       };
     else if (path === "/render") {
@@ -191,8 +190,8 @@ async function workspace(page, { empty = false, references = [] } = {}) {
             outputs: [],
             feedback: [],
             references: body.references || state.references,
-            assembled_prompt: state.comp.scene,
-            prompt: c.prompt || state.comp.scene,
+            assembled_prompt: state.comp.brief,
+            prompt: c.prompt || state.comp.brief,
             settings: c.settings,
             started_at: new Date().toISOString(),
           })),
@@ -266,15 +265,15 @@ test("one iteration beside the words, prompt edits, progress, feedback and final
     "Alpha · 2 outputs · high",
   );
   await page
-    .getByRole("textbox", { name: "Scene" })
+    .getByRole("textbox", { name: "Brief" })
     .fill("Synthetic changed scene");
   await expect(
     page
-      .getByRole("textbox", { name: "Scene" })
+      .getByRole("textbox", { name: "Brief" })
       .locator("..")
       .getByRole("status"),
   ).toHaveText("Saved");
-  expect(state.comp.scene).toBe("Synthetic changed scene");
+  expect(state.comp.brief).toBe("Synthetic changed scene");
   await page.getByText("+ model", { exact: true }).click();
   await expect(
     page.getByRole("checkbox", { name: "Square only" }),
@@ -553,7 +552,7 @@ test("autosave flushes before queue and navigation; failure stays beside the fie
     release = resolve;
   });
   await page
-    .getByRole("textbox", { name: "Scene" })
+    .getByRole("textbox", { name: "Brief" })
     .fill("Synthetic immediate scene");
   await generate(page).click();
   await expect.poll(() => state.events.includes("save-start")).toBe(true);
@@ -566,11 +565,11 @@ test("autosave flushes before queue and navigation; failure stays beside the fie
   );
   state.failSave = true;
   await page
-    .getByRole("textbox", { name: "Scene" })
+    .getByRole("textbox", { name: "Brief" })
     .fill("Synthetic failed edit");
   await expect(
     page
-      .getByRole("textbox", { name: "Scene" })
+      .getByRole("textbox", { name: "Brief" })
       .locator("..")
       .getByRole("status"),
   ).toHaveText("Synthetic save failed");
@@ -579,7 +578,7 @@ test("autosave flushes before queue and navigation; failure stays beside the fie
   state.failSave = false;
   await page.getByRole("link", { name: "2. Frame 2", exact: false }).click();
   await expect(page).toHaveURL(/#composition\/1\/frame\/2$/);
-  expect(state.comp.scene).toBe("Synthetic failed edit");
+  expect(state.comp.brief).toBe("Synthetic failed edit");
 });
 
 test("empty single has no frame overrides, keyboard generation flushes, and browser navigation waits", async ({
@@ -595,7 +594,7 @@ test("empty single has no frame overrides, keyboard generation flushes, and brow
     0,
   );
   await expect(
-    page.getByRole("textbox", { name: "Frame instructions" }),
+    page.getByRole("textbox", { name: "What happens in this frame" }),
   ).toHaveCount(0);
   await expect(page.locator(".filmstrip")).toHaveCount(0);
   await page.getByRole("button", { name: "⋯", exact: true }).click();
@@ -609,17 +608,17 @@ test("empty single has no frame overrides, keyboard generation flushes, and brow
   await page.getByText("+ model", { exact: true }).click();
   await expect(generate(page)).toBeEnabled();
   await page
-    .getByRole("textbox", { name: "Scene" })
+    .getByRole("textbox", { name: "Brief" })
     .fill("Synthetic keyboard scene");
   await page.keyboard.press("Control+Enter");
   await expect.poll(() => state.posts.length).toBe(1);
-  expect(state.comp.scene).toBe("Synthetic keyboard scene");
+  expect(state.comp.brief).toBe("Synthetic keyboard scene");
   let release;
   state.holdSave = new Promise((resolve) => {
     release = resolve;
   });
   await page
-    .getByRole("textbox", { name: "Scene" })
+    .getByRole("textbox", { name: "Brief" })
     .fill("Synthetic navigation scene");
   await page.evaluate(() => {
     location.hash = "composition/1/frame/999";
@@ -627,12 +626,12 @@ test("empty single has no frame overrides, keyboard generation flushes, and brow
   await expect
     .poll(() => state.events.filter((e) => e === "save-start").length)
     .toBeGreaterThan(1);
-  await expect(page.getByRole("textbox", { name: "Scene" })).toHaveValue(
+  await expect(page.getByRole("textbox", { name: "Brief" })).toHaveValue(
     "Synthetic navigation scene",
   );
   state.holdSave = null;
   release();
-  await expect.poll(() => state.comp.scene).toBe("Synthetic navigation scene");
+  await expect.poll(() => state.comp.brief).toBe("Synthetic navigation scene");
   await expect(page).toHaveURL(/#composition\/1\/frame\/1$/);
 });
 
@@ -658,7 +657,7 @@ test("viewer keyboard crosses models and runs, traps focus and retains the works
   viewerRun(state);
   await open(page);
   await page
-    .getByRole("textbox", { name: "Scene", exact: true })
+    .getByRole("textbox", { name: "Brief", exact: true })
     .fill("Synthetic retained draft");
   await page.getByRole("button", { name: "Add asset", exact: true }).click();
   await page
@@ -723,7 +722,7 @@ test("viewer keyboard crosses models and runs, traps focus and retains the works
   await expect(viewer(page)).toHaveCount(0);
   await expect(link).toBeFocused();
   await expect(
-    page.getByRole("textbox", { name: "Scene", exact: true }),
+    page.getByRole("textbox", { name: "Brief", exact: true }),
   ).toHaveValue("Synthetic retained draft");
   await expect(
     page.getByRole("textbox", { name: "Search assets" }),
@@ -1008,4 +1007,38 @@ test("retry outputs follow their model column; compare navigation keeps its focu
   ).toBe("0s");
   await page.keyboard.press("Escape");
   await expect(viewer(page).locator(".viewer-image")).toHaveCount(1);
+});
+
+test("composition asset role guidance opens on hover and focus and Escape closes it", async ({
+  page,
+}) => {
+  const state = await workspace(page);
+  state.comp.assets = [
+    {
+      id: 10,
+      asset_id: 10,
+      asset: state.asset,
+      role: "the lamp",
+      deselected_images: [],
+      selected_originals: [],
+    },
+  ];
+  await open(page);
+  const trigger = page.getByRole("button", { name: "Help: Role", exact: true });
+  await trigger.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "How this asset takes part in the image.",
+  );
+  await expect(trigger).toHaveAttribute(
+    "aria-describedby",
+    await page.getByRole("tooltip").getAttribute("id"),
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await trigger.focus();
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await trigger.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });

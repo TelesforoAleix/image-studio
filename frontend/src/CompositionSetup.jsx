@@ -1,5 +1,6 @@
+import { FieldHelp, guidance } from "./FieldHelp";
 import { ActionButton, ActionInput, ActionTextarea } from "./Actions";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { api } from "./api";
 import { StylePicker } from "./StylePicker";
 import { Selection } from "./CompositionControls";
@@ -19,6 +20,7 @@ export function CompositionSetup({
   setDraft,
   current,
 }) {
+  const helpId = useId();
   const [picker, setPicker] = useState(false);
   const [query, setQuery] = useState("");
   const [thumbnails, setThumbnails] = useState({});
@@ -75,12 +77,16 @@ export function CompositionSetup({
         defaultOn: i.approved || s.selected_originals.includes(i.id),
       })),
   );
-  const field = (key, label, rows) => (
-    <label key={key} className="autosave-field">
-      {label}
+  const field = (key, label, rows, help) => (
+    <div key={key} className="autosave-field help-field">
+      <div className="field-heading">
+        <label htmlFor={`${helpId}-${key}`}>{label}</label>{" "}
+        {help && <FieldHelp label={label} help={help} />}
+      </div>
       <small role="status">{autosave.status[key] || "Saved"}</small>
       {rows ? (
         <ActionTextarea
+          id={`${helpId}-${key}`}
           aria-label={label}
           rows={rows}
           value={autosave.value[key]}
@@ -88,13 +94,14 @@ export function CompositionSetup({
         />
       ) : (
         <ActionInput
+          id={`${helpId}-${key}`}
           aria-label={label}
           required
           value={autosave.value[key]}
           onChange={(e) => autosave.change(key, e.target.value)}
         />
       )}
-    </label>
+    </div>
   );
   return (
     <aside className="inspector" aria-label="Composition inspector">
@@ -228,12 +235,16 @@ export function CompositionSetup({
         </div>
       </details>
       {field("name", "Composition name")}
-      {field("direction", "Direction", 4)}
-      {field("scene", "Scene", 5)}
+      {field("brief", "Brief", 5, guidance[comp.kind])}
       {comp.kind === "storyboard" && (
         <>
           {field("frameName", "Frame name")}
-          {field("instructions", "Frame instructions", 3)}
+          {field(
+            "instructions",
+            "What happens in this frame",
+            3,
+            guidance.frame,
+          )}
           <details>
             <summary>This frame only</summary>
             <div className="reference-toggles">

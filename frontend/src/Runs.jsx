@@ -505,7 +505,7 @@ export function Runs({
         <div className="empty-library">
           <h3>Your next image starts here</h3>
           <p>
-            Set the scene, choose a model and generate. Your runs will appear
+            Write a brief, choose a model and generate. Your runs will appear
             beside your instructions.
           </p>
         </div>

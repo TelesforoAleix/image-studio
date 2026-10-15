@@ -45,8 +45,8 @@ def main():
     command.upgrade(config, "0007")
     engine = database_engine(os.environ["DATABASE_URL"])
     before = snapshot(engine)
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0008")
+    command.upgrade(config, "0008")
     after = snapshot(engine)
     assert {
         t: [{k: v for k, v in r.items() if k not in ADDITIONS} for r in rows]
@@ -62,8 +62,8 @@ def main():
     command.downgrade(config, "0007")
     assert snapshot(engine) == before
     print("PROOF MODEL MIGRATION downgrade restores R2 unchanged", flush=True)
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0008")
+    command.upgrade(config, "0008")
     assert snapshot(engine) == after
     engine.dispose()
 

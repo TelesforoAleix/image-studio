@@ -25,7 +25,7 @@ def main():
     comp = request(
         f"/api/projects/{project['id']}/compositions",
         "POST",
-        {"name": "Synthetic compare", "scene": "Synthetic scene"},
+        {"name": "Synthetic compare", "brief": "Synthetic scene"},
         status=201,
     )
     variant = comp["variants"][0]["id"]
