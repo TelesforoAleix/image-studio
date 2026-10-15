@@ -25,7 +25,7 @@ def prove(request, wait, upload):
         {
             "name": "Synthetic feedback",
             "kind": "single",
-            "scene": "Synthetic scene",
+            "brief": "Synthetic scene",
             "style_asset_id": assets[1]["id"],
         },
         status=201,
@@ -136,7 +136,7 @@ def prove(request, wait, upload):
         io.BytesIO(request(f"/api/compositions/{comp['id']}/export.zip"))
     ) as archive:
         package = json.loads(archive.read("manifest.json"))
-    assert package["format_version"] == 4
+    assert package["format_version"] == 5
     exported = {
         g["id"]: g
         for f in package["frames"]
@@ -146,7 +146,7 @@ def prove(request, wait, upload):
     assert exported == rows
     assert request(path) == history and request("/api/storage") == storage
     print(
-        "PROOF FEEDBACK 4 complete composition package version 4 carries every "
+        "PROOF FEEDBACK 4 complete composition package version 5 carries every "
         "output feedback; records/storage unchanged",
         package,
         flush=True,

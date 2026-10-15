@@ -37,8 +37,7 @@ def prove(request, wait, upload):
         {
             "name": "Synthetic per-model",
             "kind": "single",
-            "scene": "Synthetic scene",
-            "direction": "Synthetic direction",
+            "brief": "Synthetic direction\n\nSynthetic scene",
             "style_asset_id": style["id"],
         },
         status=201,

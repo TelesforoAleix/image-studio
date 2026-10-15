@@ -80,7 +80,7 @@ const runSettings = (run, prompts = false) => ({
 
 function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
   const autosave = useAutosave(comp, variant, setComp);
-  const { direction, scene, instructions } = autosave.value;
+  const { brief, instructions } = autosave.value;
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState("");
   const [choices, setChoices] = useState([]);
@@ -179,8 +179,7 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
     const timer = setTimeout(async () => {
       try {
         const result = await api(`/variants/${variant.id}/preview`, "POST", {
-          direction,
-          scene,
+          brief,
           instructions,
         });
         if (active) {
@@ -195,7 +194,7 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [comp, direction, scene, instructions]);
+  }, [comp, brief, instructions]);
   useEffect(() => {
     const key = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

@@ -25,7 +25,7 @@ def unpack(data):
     with ZipFile(io.BytesIO(data)) as archive:
         package = json.loads(archive.read("manifest.json"))
         assert package["format_version"] == (
-            4 if package["format"] == "image-studio-composition" else 2
+            5 if package["format"] == "image-studio-composition" else 2
         )
         assert package["exported_at"]
         assert set(archive.namelist()) == {"manifest.json"} | {

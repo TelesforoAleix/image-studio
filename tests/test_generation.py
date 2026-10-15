@@ -43,7 +43,7 @@ def test_prompt_order_empty_parts_and_reference_views():
     images[2]["source"] = "generated"
     preview = assemble(
         {"instructions": "Project"},
-        {"scene": "Scene"},
+        {"brief": "Scene"},
         [(asset, {"role": "Subject", "deselected_images": [2]}, images)],
         {"instructions": "Variant"},
     )
@@ -54,7 +54,7 @@ def test_prompt_order_empty_parts_and_reference_views():
     assert [r["hash"] for r in preview["references"]] == ["1", "3"]
     assert preview["references"][0]["role"] == "Subject"
     assert (
-        assemble({"instructions": ""}, {"scene": ""}, [], {"instructions": "Frame"})[
+        assemble({"instructions": ""}, {"brief": ""}, [], {"instructions": "Frame"})[
             "prompt"
         ]
         == "Frame"

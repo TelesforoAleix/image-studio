@@ -81,7 +81,7 @@ def main():
         "POST",
         {
             "name": "Synthetic storyboard",
-            "scene": "Synthetic scene",
+            "brief": "Synthetic scene",
             "kind": "storyboard",
         },
         status=201,

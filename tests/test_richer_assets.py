@@ -111,7 +111,7 @@ def test_prompt_and_original_order():
     }
     frame = {"instructions": "Action", "selected_originals": [1]}
     assert [i["id"] for i in chosen_images(images, selection, frame)] == [2, 1]
-    preview = assemble(None, {"scene": "Scene"}, [(asset, selection, images)], frame)
+    preview = assemble(None, {"brief": "Scene"}, [(asset, selection, images)], frame)
     assert (
         preview["prompt"] == "Scene\n\nSubject: Synthetic (Person) — Description\n"
         "Keep: face shape (reference images 1, 2)\n\nAction"

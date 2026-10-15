@@ -62,8 +62,7 @@ async function mock(page, initial = "done") {
     id: 1,
     name: "Synthetic composition",
     kind: "single",
-    direction: "",
-    scene: "",
+    brief: "",
     assets: [],
     variants: [frame],
   };
@@ -412,4 +411,94 @@ test("running progress falls back to elapsed time without a profile estimate", a
   await expect(page.getByText(/s elapsed/)).toBeVisible();
   await expect(page.getByText(/s left/)).toHaveCount(0);
   console.log("PROGRESS: elapsed time alone when seconds_per_image is missing");
+});
+
+async function proveHelp(page, label, copy) {
+  const trigger = page.getByRole("button", {
+    name: `Help: ${label}`,
+    exact: true,
+  });
+  await trigger.hover();
+  let tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText(copy);
+  await expect(trigger).toHaveAttribute(
+    "aria-describedby",
+    await tooltip.getAttribute("id"),
+  );
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await trigger.focus();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText(copy);
+  await trigger.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.blur();
+}
+
+test("single and storyboard fields and every guidance tooltip support hover, focus and Escape", async ({
+  page,
+}) => {
+  const state = await mock(page);
+  await page.goto("/#composition/1/frame/1");
+  await expect(
+    page.getByRole("textbox", { name: "Brief", exact: true }),
+  ).toBeVisible();
+  for (const name of [
+    "Direction",
+    "Scene",
+    "Frame name",
+    "Frame instructions",
+    "What happens in this frame",
+  ])
+    await expect(page.getByRole("textbox", { name, exact: true })).toHaveCount(
+      0,
+    );
+  await proveHelp(
+    page,
+    "Brief",
+    "What this image shows and how it should feel",
+  );
+  await page.getByText("Style · None", { exact: true }).click();
+  await proveHelp(
+    page,
+    "Style",
+    "The project's style applies unless this composition picks its own.",
+  );
+  state.storyboard = true;
+  await page.goto("/#assets");
+  await page.goto("/#composition/1/frame/1");
+  await expect(
+    page.getByRole("textbox", { name: "Brief", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Frame name", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", {
+      name: "What happens in this frame",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await proveHelp(page, "Brief", "The story as a whole");
+  await proveHelp(
+    page,
+    "What happens in this frame",
+    "Don't repeat the brief.",
+  );
+  await page.goto("/#projects");
+  await proveHelp(
+    page,
+    "Creative direction",
+    "How every image in this project should look and feel",
+  );
+  await page.goto("/#asset/1");
+  await proveHelp(page, "Description", "What the asset is, in plain words");
+  await proveHelp(
+    page,
+    "What must stay the same",
+    "The features a model must not change",
+  );
 });

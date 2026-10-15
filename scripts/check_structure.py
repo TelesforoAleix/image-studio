@@ -38,13 +38,21 @@ def main():
         {
             "name": "Synthetic stand-alone",
             "kind": "single",
-            "direction": "Synthetic composition direction",
-            "scene": "Synthetic scene",
+            "brief": "Synthetic composition direction\n\nSynthetic scene",
         },
         status=201,
     )
     path = f"/api/compositions/{single['id']}"
     frame = single["variants"][0]["id"]
+    assert single["brief"] == "Synthetic composition direction\n\nSynthetic scene"
+    assert "direction" not in single and "scene" not in single
+    draft = request(
+        f"/api/variants/{frame}/preview",
+        "POST",
+        {"brief": "Synthetic draft brief", "instructions": "Hidden single text"},
+    )
+    assert draft["prompt"] == "Synthetic draft brief"
+    assert request(path)["brief"] == single["brief"]
     for asset in assets:
         request(path + f"/assets/{asset['id']}", "PUT", {"role": "Subject"})
     preview = request(f"/api/variants/{frame}/preview")
@@ -76,10 +84,14 @@ def main():
             "/api/files/" + done["outputs"][0]
         )
     exported = package(path)
+    assert exported["format_version"] == 5
+    assert exported["composition"]["brief"] == single["brief"]
+    assert "direction" not in exported["composition"]
+    assert "scene" not in exported["composition"]
     assert exported["project"] is None and exported["composition"]["kind"] == "single"
     assert all(s["asset"]["project_id"] is None for s in exported["asset_pack"])
     print(
-        "PROOF STRUCTURE 2 both stand-alone exports work; package version 4 "
+        "PROOF STRUCTURE 2 both stand-alone exports work; package version 5 "
         "project null and assets global",
         flush=True,
     )
@@ -164,7 +176,7 @@ def main():
         request(f"/api/variants/{f['id']}/runs") for f in original["variants"]
     ]
     copy = request(spath + "/duplicate", "POST", status=201)
-    for key in ["project_id", "kind", "direction", "scene"]:
+    for key in ["project_id", "kind", "brief"]:
         assert copy[key] == original[key]
     assert copy["name"] == original["name"] + " (copy)"
     assert [

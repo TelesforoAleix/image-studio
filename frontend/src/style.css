@@ -704,7 +704,8 @@ main.workspace-main {
 .inspector label {
   margin: var(--space-3) 0;
 }
-.inspector label small {
+.inspector label small,
+.inspector .help-field small {
   font-weight: 400;
   font-size: var(--text-xs);
 }
@@ -1075,4 +1076,49 @@ kbd {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+.field-help {
+  display: inline-flex;
+  margin-left: 0.25rem;
+}
+.help-trigger {
+  padding: 0 0.25rem;
+  border: 0;
+  background: transparent;
+  color: var(--secondary-text);
+  cursor: help;
+  font-size: 1rem;
+}
+.field-tooltip {
+  position: fixed;
+  z-index: 1000;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: normal;
+  line-height: 1.5;
+  box-shadow: 0 3px 12px #0003;
+}
+
+.help-field {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.field-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.field-heading label,
+.inspector .field-heading label {
+  margin: 0;
 }

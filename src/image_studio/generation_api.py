@@ -234,7 +234,7 @@ def image_ids(value, available, field):
 
 def composition_fields(connection, value):
     validate_style(connection, value)
-    text_fields(value, ["name", "scene", "direction"])
+    text_fields(value, ["name", "brief"])
     if "kind" in value and value["kind"] not in ("single", "storyboard"):
         raise BadRequest("kind must be single or storyboard")
     if "project_id" in value and value["project_id"] is not None:
@@ -305,8 +305,7 @@ def all_compositions(connection):
             body(
                 [
                     "name",
-                    "scene",
-                    "direction",
+                    "brief",
                     "kind",
                     "project_id",
                     "style_asset_id",
@@ -341,7 +340,7 @@ def project_compositions(connection, project_id):
         return jsonify(summaries(connection, project_id, filtered=True))
     value = composition_fields(
         connection,
-        body(["name", "scene", "direction", "kind", "style_asset_id"], ["name"]),
+        body(["name", "brief", "kind", "style_asset_id"], ["name"]),
     )
     return new_composition(connection, {**value, "project_id": project_id})
 
@@ -356,8 +355,7 @@ def duplicate_composition(connection, identifier):
             "name",
             "project_id",
             "kind",
-            "direction",
-            "scene",
+            "brief",
             "style_asset_id",
             "style_deselected_images",
         )
@@ -425,8 +423,7 @@ def edit_composition(connection, identifier):
             body(
                 [
                     "name",
-                    "scene",
-                    "direction",
+                    "brief",
                     "kind",
                     "project_id",
                     "style_asset_id",
@@ -680,13 +677,12 @@ def preview(connection, identifier):
     if request.method == "GET":
         return jsonify(variant_preview(connection, identifier))
     value = text_fields(
-        body(["direction", "scene", "instructions"], ["scene", "instructions"]),
-        ["direction", "scene", "instructions"],
+        body(["brief", "instructions"], ["brief", "instructions"]),
+        ["brief", "instructions"],
     )
     variant = dict(live_variant(connection, identifier))
     comp = dict(composition(connection, variant["composition_id"]))
-    comp["scene"] = value["scene"]
-    comp["direction"] = value.get("direction", comp["direction"])
+    comp["brief"] = value["brief"]
     variant["instructions"] = value["instructions"]
     return jsonify(
         assemble(

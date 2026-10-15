@@ -1,5 +1,6 @@
+import { FieldHelp, guidance } from "./FieldHelp";
 import { ActionInput, ActionSelect, ActionTextarea } from "./Actions";
-import React from "react";
+import React, { useId } from "react";
 export const assetTypes = {
   person: "Person",
   garment_product: "Garment/Product",
@@ -9,6 +10,7 @@ export const assetTypes = {
   other: "Other",
 };
 export function AssetFields({ value, onChange }) {
+  const helpId = useId();
   const field = (name, next) => onChange({ ...value, [name]: next });
   return (
     <>
@@ -42,22 +44,32 @@ export function AssetFields({ value, onChange }) {
           placeholder="For example, garment"
         />
       </label>
-      <label>
-        Description
+      <div className="help-field">
+        <div className="field-heading">
+          <label htmlFor={`${helpId}-description`}>Description</label>{" "}
+          <FieldHelp label="Description" help={guidance.description} />
+        </div>
         <ActionTextarea
+          id={`${helpId}-description`}
+          aria-label="Description"
           rows="5"
           value={value.description}
           onChange={(e) => field("description", e.target.value)}
         />
-      </label>
-      <label>
-        What must stay the same
+      </div>
+      <div className="help-field">
+        <div className="field-heading">
+          <label htmlFor={`${helpId}-preserve`}>What must stay the same</label>{" "}
+          <FieldHelp label="What must stay the same" help={guidance.preserve} />
+        </div>
         <ActionTextarea
+          id={`${helpId}-preserve`}
+          aria-label="What must stay the same"
           rows="4"
           value={value.preserve}
           onChange={(e) => field("preserve", e.target.value)}
         />
-      </label>
+      </div>
     </>
   );
 }

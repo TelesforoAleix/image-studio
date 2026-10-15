@@ -30,14 +30,12 @@ def create(c, **values):
 
 def test_template_order_and_empty_parts():
     frame = {"instructions": "Action"}
-    comp = {"direction": "Direction", "scene": "Scene"}
+    comp = {"brief": "Direction\n\nScene"}
     assert assemble(None, comp, [], frame)["prompt"] == "Direction\n\nScene\n\nAction"
     assert assemble({"instructions": "Project"}, comp, [], frame)["prompt"] == (
         "Project\n\nDirection\n\nScene\n\nAction"
     )
-    assert (
-        assemble(None, {"direction": "", "scene": ""}, [], frame)["prompt"] == "Action"
-    )
+    assert assemble(None, {"brief": ""}, [], frame)["prompt"] == "Action"
 
 
 def test_s8_upgrade_twice_and_downgrade_with_rows(client):
@@ -47,7 +45,7 @@ def test_s8_upgrade_twice_and_downgrade_with_rows(client):
 
 def test_standalone_moves_listing_exports_and_snapshots(generation_client):
     c, _, root = generation_client
-    comp = create(c, direction="Composition direction", scene="Scene")
+    comp = create(c, brief="Composition direction\n\nScene")
     frame = comp["variants"][0]["id"]
     path = f"/api/compositions/{comp['id']}"
     asset = new_asset(c)
@@ -69,7 +67,7 @@ def test_standalone_moves_listing_exports_and_snapshots(generation_client):
         f"/api/variants/{frame}/final", json={"generation_id": done["id"], "output": 0}
     )
     package = unpack(c.get(path + "/export.zip").data)
-    assert package["project"] is None and package["format_version"] == 4
+    assert package["project"] is None and package["format_version"] == 5
     assert package["asset_pack"][0]["asset"]["project_id"] is None
     assert c.get(path + "/sequence.zip").status_code == 200
     folders = [
@@ -109,7 +107,7 @@ def test_kind_rules_and_duplicate_preserve_pack_frames_without_history(
     generation_client,
 ):
     c, engine, root = generation_client
-    comp = create(c, direction="Direction", scene="Scene")
+    comp = create(c, brief="Direction\n\nScene")
     path = f"/api/compositions/{comp['id']}"
     assert c.post(path + "/variants", json={}).status_code == 409
     assert c.patch(path, json={"kind": "storyboard"}).status_code == 200
@@ -149,7 +147,7 @@ def test_kind_rules_and_duplicate_preserve_pack_frames_without_history(
     original = c.get(path).json
     copy = c.post(path + "/duplicate").json
     assert copy["name"] == original["name"] + " (copy)"
-    for field in ["project_id", "kind", "direction", "scene"]:
+    for field in ["project_id", "kind", "brief"]:
         assert copy[field] == original[field]
     for a, b in zip(copy["variants"], original["variants"], strict=True):
         for field in ["name", "instructions", "position", "deselected_images"]:
@@ -188,7 +186,7 @@ def test_kind_rules_and_duplicate_preserve_pack_frames_without_history(
         {"project_id": True},
         {"project_id": -1},
         {"direction": None},
-        {"scene": 1},
+        {"brief": 1},
         {"name": " "},
         {"unknown": 1},
     ],

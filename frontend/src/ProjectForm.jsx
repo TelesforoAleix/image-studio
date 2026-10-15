@@ -1,13 +1,15 @@
+import { FieldHelp, guidance } from "./FieldHelp";
 import {
   ActionButton,
   ActionForm,
   ActionInput,
   ActionTextarea,
 } from "./Actions";
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { StylePicker } from "./StylePicker";
 import { api } from "./api";
 export function ProjectForm({ project, act, changed }) {
+  const helpId = useId();
   const [name, setName] = useState(project?.name || "");
   const [instructions, setInstructions] = useState(project?.instructions || "");
   const [style, setStyle] = useState(project?.style_asset_id ?? null);
@@ -39,15 +41,20 @@ export function ProjectForm({ project, act, changed }) {
           onChange={(e) => setName(e.target.value)}
         />
       </label>
-      <label>
-        Creative direction
+      <div className="help-field">
+        <div className="field-heading">
+          <label htmlFor={`${helpId}-creative`}>Creative direction</label>{" "}
+          <FieldHelp label="Creative direction" help={guidance.creative} />
+        </div>
         <ActionTextarea
+          id={`${helpId}-creative`}
+          aria-label="Creative direction"
           rows="5"
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
           placeholder="Shared creative instructions for this project"
         />
-      </label>
+      </div>
       <StylePicker value={style} onChange={setStyle} {...{ act }} />
       <ActionButton className={project ? "secondary" : "primary"}>
         {project ? "Save project" : "Create project"}

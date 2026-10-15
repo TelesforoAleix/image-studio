@@ -85,8 +85,7 @@ def prove(request, wait, upload):
         {
             "name": "Synthetic richer composition",
             "kind": "storyboard",
-            "direction": "Synthetic direction",
-            "scene": "Synthetic scene",
+            "brief": "Synthetic direction\n\nSynthetic scene",
             "style_asset_id": style["id"],
         },
         status=201,
@@ -257,7 +256,7 @@ def prove(request, wait, upload):
         == candidate["lineage"]
     )
     exported = package(path)
-    assert exported["format_version"] == 4 and exported["style"]["id"] == style["id"]
+    assert exported["format_version"] == 5 and exported["style"]["id"] == style["id"]
     assert exported["asset_pack"][0]["asset"]["type"] == "person"
     assert exported["asset_pack"][0]["asset"]["preserve"] == person["preserve"]
     aexport = package(f"/api/assets/{garment['id']}")

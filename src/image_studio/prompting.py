@@ -26,7 +26,7 @@ def chosen_images(images, selection, variant):
 def assemble(project, composition, selections, variant):
     parts = [
         project["instructions"] if project else "",
-        composition.get("direction", ""),
+        composition["brief"],
     ]
     references = []
     lines = []
@@ -60,7 +60,9 @@ def assemble(project, composition, selections, variant):
             parts.append(line)
         else:
             lines.append(line)
-    parts.extend([composition["scene"], *lines, variant["instructions"]])
+    parts.extend(lines)
+    if composition.get("kind") != "single":
+        parts.append(variant["instructions"])
     return {
         "prompt": "\n\n".join(p for p in parts if p.strip()),
         "references": references,

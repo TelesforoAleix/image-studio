@@ -1,9 +1,11 @@
+import { FieldHelp, guidance } from "./FieldHelp";
 import { ActionGroup, ActionButton, ActionInput } from "./Actions";
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 import { api } from "./api";
 
 export function Selection({ selection, save, remove }) {
+  const helpId = useId();
   const [role, setRole] = useState(selection.role);
   return (
     <ActionGroup className="pack-row">
@@ -13,16 +15,21 @@ export function Selection({ selection, save, remove }) {
         )}
         <strong>{selection.asset.name}</strong>
       </div>
-      <label>
-        Role
+      <div className="help-field">
+        <div className="field-heading">
+          <label htmlFor={`${helpId}-role`}>Role</label>{" "}
+          <FieldHelp label="Role" help={guidance.role} />
+        </div>
         <ActionInput
+          id={`${helpId}-role`}
+          aria-label="Role"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           onBlur={() => {
             if (role !== selection.role) save({ ...selection, role });
           }}
         />
-      </label>
+      </div>
       {selection.asset.deleted_at && (
         <p>This asset was deleted. Remove it to generate.</p>
       )}
