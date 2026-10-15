@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { flushNavigation } from "./navigation";
 import { api } from "./api";
-import { OutputPage } from "./Feedback";
+import { OutputViewer, ViewerProvider } from "./OutputViewer";
 import { Storage } from "./Storage";
 import { Library } from "./Library";
 import { AssetPage } from "./AssetPage";
@@ -13,7 +13,14 @@ import { CompositionPage } from "./Composition";
 import { ProjectPage, Compositions } from "./Compositions";
 
 function App() {
-  const [route, setRoute] = useState(window.location.hash.slice(1) || "assets");
+  const [route, setRoute] = useState(() => {
+    const initial = location.hash.slice(1) || "assets";
+    if (/\?output=\d+\.\d+$/.test(initial) && !history.state?.outputViewer) {
+      history.replaceState(null, "", `#${initial.split("?")[0]}`);
+      history.pushState({ outputViewer: true }, "", `#${initial}`);
+    }
+    return initial;
+  });
   const [projects, setProjects] = useState([]);
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
@@ -46,8 +53,15 @@ function App() {
       const next = window.location.hash.slice(1) || "assets";
       const request = ++navigation;
       try {
-        await flushNavigation();
+        if (next.split("?")[0] !== displayedRoute.current.split("?")[0])
+          await flushNavigation();
         if (request !== navigation) return;
+        if (
+          next.includes("?output=") &&
+          !displayedRoute.current.includes("?output=") &&
+          next.split("?")[0] === displayedRoute.current.split("?")[0]
+        )
+          history.replaceState({ outputViewer: true }, "");
         setRoute(next);
         setError("");
       } catch {
@@ -61,17 +75,39 @@ function App() {
   useEffect(() => {
     act(async () => setProjects(await api("/projects")), false);
   }, [revision]);
-  const projectMatch = /^project\/(\d+)$/.exec(route);
+  const base = route.split("?")[0];
+  const requestedOutput = new URLSearchParams(route.split("?")[1] || "").get(
+    "output",
+  );
+  const outputToken = /^\d+\.\d+$/.test(requestedOutput || "")
+    ? requestedOutput
+    : null;
+  const projectMatch = /^project\/(\d+)$/.exec(base);
   const compositionMatch =
     /^composition\/(\d+)(?:\/frame\/(\d+)(?:\/(setup|generate|history))?)?$/.exec(
-      route,
+      base,
     );
-  const frameMatch = /^frame\/(\d+)$/.exec(route);
+  const frameMatch = /^frame\/(\d+)$/.exec(base);
   useEffect(() => {
+    let active = true;
     if (compositionMatch?.[3])
       window.location.replace(
         `#composition/${compositionMatch[1]}/frame/${compositionMatch[2]}`,
       );
+    const legacy = /^output\/(\d+)\/(\d+)$/.exec(base);
+    if (legacy)
+      act(async () => {
+        const g = await api(`/generations/${legacy[1]}`);
+        let parent = `asset/${g.asset_id}`;
+        if (g.variant_id) {
+          const frame = await api(`/variants/${g.variant_id}`);
+          parent = `composition/${frame.composition_id}/frame/${frame.id}`;
+        }
+        if (!active) return;
+        history.replaceState(null, "", `#${parent}`);
+        location.hash = `${parent}?output=${legacy[1]}.${legacy[2]}`;
+        history.replaceState({ outputViewer: true }, "");
+      }, false);
     if (route === "library") window.location.replace("#assets");
     if (frameMatch)
       act(async () => {
@@ -81,13 +117,20 @@ function App() {
           `#composition/${frame.composition_id}/frame/${frame.id}`,
         );
       }, false);
+    return () => {
+      active = false;
+    };
   }, [route]);
   const assetFilter =
     new URLSearchParams(route.split("?")[1] || "").get("used_by_project") || "";
-  const outputMatch = /^output\/(\d+)\/(\d+)$/.exec(route);
-  const assetMatch = /^asset\/(\d+)$/.exec(route);
+  const outputMatch = /^output\/(\d+)\/(\d+)$/.exec(base);
+  const assetMatch = /^asset\/(\d+)$/.exec(base);
   return (
-    <main className={compositionMatch ? "workspace-main" : undefined}>
+    <main
+      aria-hidden={outputToken ? true : undefined}
+      inert={outputToken ? true : undefined}
+      className={compositionMatch ? "workspace-main" : undefined}
+    >
       <header className="studio-header">
         <h1>
           image studio
@@ -140,12 +183,7 @@ function App() {
         </div>
       )}
       {outputMatch ? (
-        <OutputPage
-          key={route}
-          id={outputMatch[1]}
-          output={Number(outputMatch[2])}
-          {...{ act }}
-        />
+        <p>Opening output…</p>
       ) : route === "storage" ? (
         <Storage act={act} />
       ) : route === "projects" ? (
@@ -196,8 +234,15 @@ function App() {
           revision={revision}
         />
       )}
+      {outputToken && /^\d+\.\d+$/.test(outputToken) && (
+        <OutputViewer token={outputToken} base={base} act={act} />
+      )}
     </main>
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <ViewerProvider>
+    <App />
+  </ViewerProvider>,
+);

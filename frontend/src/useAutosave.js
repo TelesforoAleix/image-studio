@@ -90,6 +90,7 @@ export function useAutosave(composition, frame, setComp) {
       const a = e.target.closest?.("a");
       if (
         !a ||
+        a.hasAttribute("data-output") ||
         a.target === "_blank" ||
         e.metaKey ||
         e.ctrlKey ||

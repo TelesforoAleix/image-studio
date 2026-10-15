@@ -4,12 +4,22 @@ import {
   ActionSelect,
   ActionTextarea,
 } from "./Actions";
-import React, { useState, useEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import { api } from "./api";
 
 const empty = { verdict: null, asset_ratings: [], note: "", updated_at: null };
 
-export function Feedback({ generation, output, act, saved, primary = false }) {
+export const Feedback = forwardRef(function Feedback(
+  { generation, output, act, saved, primary = false, shortcuts = false },
+  ref,
+) {
+  const root = useRef(null);
   const feedback = generation.feedback?.[output] || empty;
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -41,8 +51,24 @@ export function Feedback({ generation, output, act, saved, primary = false }) {
         setSaving(false);
       }
     });
+  useImperativeHandle(ref, () => ({
+    verdict: (value) =>
+      root.current?.querySelector(`[data-verdict="${value}"]`)?.click(),
+    open: () => {
+      if (!draft) root.current?.querySelector("[data-detail]")?.click();
+    },
+    cancel: () => {
+      if (!draft) return false;
+      setDraft(null);
+      root.current?.querySelector("[data-detail]")?.focus();
+      return true;
+    },
+  }));
+  useEffect(() => {
+    if (shortcuts && draft) root.current?.querySelector("select")?.focus();
+  }, [!!draft]);
   return (
-    <div className="output-feedback">
+    <div ref={root} className="output-feedback">
       <div
         className="actions verdicts"
         aria-label={`Verdict for output ${output + 1}`}
@@ -52,6 +78,7 @@ export function Feedback({ generation, output, act, saved, primary = false }) {
           ["not_good", "Not good"],
         ].map(([value, label]) => (
           <ActionButton
+            data-verdict={value}
             success="Feedback saved."
             type="button"
             key={value}
@@ -62,10 +89,17 @@ export function Feedback({ generation, output, act, saved, primary = false }) {
             }
           >
             {label}
+            {shortcuts && (
+              <>
+                {" "}
+                <kbd>{value === "good" ? "G" : "N"}</kbd>
+              </>
+            )}
           </ActionButton>
         ))}
       </div>
       <ActionButton
+        data-detail
         type="button"
         className={primary && !draft ? "primary" : "plain"}
         aria-expanded={!!draft}
@@ -75,6 +109,12 @@ export function Feedback({ generation, output, act, saved, primary = false }) {
         }}
       >
         {draft ? "Cancel feedback" : "Provide feedback"}
+        {shortcuts && (
+          <>
+            {" "}
+            <kbd>{draft ? "Esc" : "Enter"}</kbd>
+          </>
+        )}
       </ActionButton>
       {draft && (
         <ActionForm
@@ -158,69 +198,4 @@ export function Feedback({ generation, output, act, saved, primary = false }) {
       )}
     </div>
   );
-}
-
-export function OutputPage({ id, output, act }) {
-  const [generation, setGeneration] = useState(null);
-  const [final, setFinal] = useState(null);
-  useEffect(() => {
-    act(async () => {
-      const row = await api(`/generations/${id}`);
-      if (!row.outputs[output]) throw new Error("Output not found");
-      setGeneration(row);
-      if (row.variant_id)
-        setFinal(await api(`/variants/${row.variant_id}/final`));
-    }, false);
-  }, [id, output]);
-  if (!generation) return <p>Loading output…</p>;
-  return (
-    <section className="large-output">
-      <h2>
-        {generation.model_info.display_name} · Output {output + 1}
-      </h2>
-      <a
-        href={
-          generation.variant_id
-            ? `#frame/${generation.variant_id}`
-            : `#asset/${generation.asset_id}`
-        }
-      >
-        Back to {generation.variant_id ? "frame" : "asset"}
-      </a>
-      <img
-        src={`/api/files/${generation.outputs[output]}`}
-        alt={`Output ${output + 1}`}
-      />
-      <Feedback
-        primary
-        {...{ generation, output, act }}
-        saved={(feedback) =>
-          setGeneration({
-            ...generation,
-            feedback: generation.feedback.map((f, i) =>
-              i === output ? feedback : f,
-            ),
-          })
-        }
-      />
-      {generation.variant_id && generation.state === "done" && (
-        <ActionButton
-          onClick={() =>
-            act(async () =>
-              setFinal(
-                await api(`/variants/${generation.variant_id}/final`, "PUT", {
-                  generation_id: generation.id,
-                  output,
-                }),
-              ),
-            )
-          }
-        >
-          {final?.generation_id === generation.id && final.output === output
-            ? "Final"
-            : "Mark final"}
-        </ActionButton>
-      )}
-    </section>
-  );
-}
+});
