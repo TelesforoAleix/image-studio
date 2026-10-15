@@ -8,9 +8,10 @@ import { CompositionSetup } from "./CompositionSetup";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 import { useAutosave } from "./useAutosave";
 
-export function CompositionPage({ id, frameId, projects, act }) {
+export function CompositionPage({ id, frameId, projects, act, onProject }) {
   const [comp, setComp] = useState(null);
   const [assets, setAssets] = useState([]);
+  useEffect(() => onProject(comp?.project_id), [comp?.project_id, onProject]);
   const [models, setModels] = useState([]);
   useEffect(() => {
     let active = true;
@@ -374,6 +375,10 @@ function Workspace({ comp, setComp, assets, models, variant, projects, act }) {
       )}
       <div className="workspace-columns">
         <CompositionSetup
+          projectName={
+            projects.find((p) => p.id === comp.project_id)?.name ||
+            "Project assets"
+          }
           {...{
             comp,
             setComp,

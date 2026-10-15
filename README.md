@@ -80,19 +80,39 @@ request, including multipart overhead, with JSON 413 errors. Pillow's decompress
 bomb protection is retained. Accepted bytes are stored unchanged under their SHA-256;
 repeated bytes share one stored file. File metadata lives in Postgres.
 
-The top-level sections are **Assets**, **Compositions** and **Projects**; Storage
-is a secondary link. Routes are `#assets`, `#asset/<id>`, `#compositions`,
-`#composition/<id>/frame/<frame-id>`, `#projects`,
-`#project/<id>` and `#storage`. `#library` redirects to Assets; `#frame/<id>`
-redirects to that frame's composition workspace. Opening `#composition/<id>`
-selects its first live frame. The former `/setup`, `/generate` and `/history`
-suffixes redirect to the same workspace.
+The desktop sidebar stays visible on every page. **Studio** opens an image-first
+composition grid ordered by newest activity (first final, otherwise latest output,
+otherwise an empty tile), with name, kind, live frame count and last activity.
+Search by name, choose **No project**, or open a project folder. Projects also appear
+beneath the Studio grid. **New composition** opens a small sheet with name, kind and
+project; the selected project is prefilled. **New project** opens a sheet from either
+the sidebar or folder list, then opens the created project.
 
-A project is a folder with creative direction. Its page lists compact composition
-rows and links to `#assets?used_by_project=<id>` for assets used by its live
-compositions. The Compositions section lists every live composition with its kind,
-project (or “No project”), first ordered final image or latest output thumbnail,
-and last generation activity (creation time before any runs), filterable by project.
+Project views show the name, creative direction and style read-only. **Edit** opens
+an explicit Save/Cancel form. Below are the project's compositions and curated assets.
+**Add from library** opens a searchable picker with thumbnails and types; **Remove
+from project** only removes membership. Assets remain global and may belong to many
+projects. Removing membership never changes a composition's pack; deleted assets
+remain listed with a deleted mark until removed. Adding a subject or style to a
+project composition's pack also adds project membership, idempotently. Project style
+choices are added too. Existing memberships stay when styles change or compositions
+move. Stand-alone compositions use the full library; project compositions show the
+project's assets first under its name, then the rest under **All assets**.
+
+**Assets** opens a grid showing the first approved reference, otherwise first original,
+otherwise an empty tile, with name and type. Search by name or use the sidebar's type
+items. **New asset** opens the creation form in a sheet. The sidebar foot shows this
+UTC month's estimated spend and the secondary **Storage** link.
+
+Routes are `#studio`, `#studio/none`, `#studio/project/<id>`, `#assets`,
+`#assets/<type>`, `#asset/<id>`, `#composition/<id>/frame/<frame-id>` and `#storage`.
+`#projects` and `#compositions` redirect to Studio; `#project/<id>` and
+`#assets?used_by_project=<id>` redirect to the curated project view. `#library`
+redirects to Assets; `#frame/<id>` redirects to its composition workspace.
+Opening `#composition/<id>` selects its first live frame. The former `/setup`,
+`/generate` and `/history` suffixes redirect to the same workspace. Viewer suffixes
+and asset/composition routes remain compatible.
+
 New compositions choose single or storyboard and an optional project. Singles hold
 one live frame. Turn a single into a storyboard to add frames; a storyboard can
 return to single only with one live frame.
@@ -132,6 +152,8 @@ The API uses JSON, except multipart uploads with one or more `files` fields:
 | --- | --- |
 | `/api/projects` | GET list, POST create (`name`, `instructions`, optional `style_asset_id`) |
 | `/api/projects/<id>` | GET read, PATCH edit |
+| `/api/projects/<id>/assets` | GET curated assets, including deleted assets, `added_at` and `thumbnail` |
+| `/api/projects/<id>/assets/<asset-id>` | PUT idempotent add/re-add of a live asset; DELETE timestamps removal, including deleted assets |
 | `/api/assets` | GET list, POST create (`name`, `type`, `type_tag`, `description`, `preserve`) |
 | `/api/assets/<id>` | GET with images, PATCH edit, DELETE soft-delete |
 | `/api/assets/<id>/duplicate` | POST copy fields and image approvals |
@@ -141,7 +163,9 @@ The API uses JSON, except multipart uploads with one or more `files` fields:
 
 Assets expose no visibility field or control. List filtering accepts `type`, `type_tag` and
 `used_by_project` (only assets actively used by that project's live compositions).
-Assets are live by default; `include_deleted=true`
+Both asset and composition lists accept literal, case-insensitive name search `q`.
+Asset lists opt into `thumbnail` with `thumbnails=true`; composition summaries include
+`frame_count` for live frames. Assets are live by default; `include_deleted=true`
 includes deleted assets in list and read responses. Deleted assets cannot be edited,
 duplicated or uploaded to, but their files remain fetchable. Unknown files return JSON
 404. The app has no login; keep its published port on loopback and use Cloudflare
@@ -367,8 +391,8 @@ Additional API routes:
 | `/api/generations/<id>` | GET state, exact snapshot and output hashes |
 
 Image PATCH also accepts `{"rejected": true}`. Approval clears rejection and rejection
-clears approval. Asset detail accepts `include_rejected=true`. Hash navigation adds
-`#project/<id>` and `#composition/<id>`. Waiting and running records update through
+clears approval. Asset detail accepts `include_rejected=true`. Hash navigation uses
+`#studio/project/<id>` and `#composition/<id>`. Waiting and running records update through
 polling. CI's `scripts/check_generation.py` prints proof of the complete placeholder
 journey, immutable history after canonical replacement, candidate approval/rejection,
 terminal failure after three attempts, service-outage retry/recovery, limit refusal and restart persistence.
@@ -779,7 +803,7 @@ Both themes prove text contrast of at least 4.5:1 and borders/focus at least 3:1
 
 Buttons default to bordered secondary. Each view has one filled `primary`:
 New/Create asset, Upload selected images, New/Create composition, Create project,
-Create composition on a project, Generate in the composition workspace,
+Save in the project edit sheet, Generate in the composition workspace,
 Provide/Save feedback in the output viewer, and Refresh in Storage.
 `plain` covers in-place Edit, Reset and reorder actions. `destructive` uses danger
 text; deletion retains its existing inline confirmation.
@@ -823,3 +847,24 @@ Past generation snapshots are never rewritten. Composition packages now use
 **format_version 5** with `brief` in place of `direction` and `scene`; asset
 packages remain version 2. The CI migration proof exercises U3 populated and empty
 compositions, runs and finals, two upgrades, downgrade and re-upgrade.
+
+
+## Curated project assets and navigation
+
+Alembic 0011 adds `project_assets`, keyed by project and asset, with `added_at`
+and nullable `removed_at`. Re-adding revives the retained row and records its new
+added time; repeated adds to an active membership preserve its time. The backfill
+includes active packs of live project compositions, their style overrides, and
+project styles, including deleted assets. Inactive packs and deleted compositions
+are excluded. All earlier rows, snapshots and files remain unchanged. Downgrade
+removes only the new table to restore V1; production rollback uses a revert PR
+and restart to retain owner memberships. Composition packages remain version 5
+and contain no memberships; exports keep streaming without writes.
+
+CI's `check_project_assets_migration.py` proves the V1 backfill, unchanged prior
+rows, two upgrades, downgrade and re-upgrade. `check_project_assets.py` proves
+add-on-pack idempotence, retained packs after membership removal, re-add and deleted
+asset display/removal. The earlier journeys and dump restore include the new table.
+Playwright checks cover sidebar/current items, grids/search, button-opened forms,
+project read/edit/save/cancel, library curation, project-first workspace picking,
+preselected composition project and legacy redirects, alongside the earlier proofs.

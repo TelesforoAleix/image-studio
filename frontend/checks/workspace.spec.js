@@ -111,9 +111,10 @@ async function workspace(page, { empty = false, references = [] } = {}) {
       method = req.method();
     let value;
     if (path === "/projects") value = [{ id: 1, name: "Synthetic project" }];
+    else if (path === "/projects/1/assets") value = [asset];
     else if (path === "/models") value = models;
     else if (path === "/assets")
-      value = [{ id: 10, name: "Lamp", type: "object_vehicle" }];
+      value = [{ id: 10, name: "Lamp", type: "object_vehicle", thumbnail: "lamp-1" }];
     else if (path === "/assets/10") value = asset;
     else if (path === "/compositions/1") {
       if (method === "PATCH") {

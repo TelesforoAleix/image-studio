@@ -19,25 +19,33 @@ export function CompositionSetup({
   draft,
   setDraft,
   current,
+  projectName,
 }) {
   const helpId = useId();
   const [picker, setPicker] = useState(false);
   const [query, setQuery] = useState("");
   const [thumbnails, setThumbnails] = useState({});
   const [pickerError, setPickerError] = useState("");
+  const [members, setMembers] = useState([]);
+  const [pickerLoaded, setPickerLoaded] = useState(false);
   useEffect(() => {
     if (!picker) return;
     let active = true;
-    Promise.all(
-      assets
-        .filter((a) => a.type !== "style")
-        .map((a) => api(`/assets/${a.id}`)),
-    )
-      .then((details) => {
-        if (active)
-          setThumbnails(
-            Object.fromEntries(details.map((a) => [a.id, a.images[0]?.hash])),
-          );
+    setPickerLoaded(false);
+    setPickerError("");
+    Promise.all([
+      comp.project_id
+        ? api(`/projects/${comp.project_id}/assets`)
+        : Promise.resolve([]),
+      api("/assets?thumbnails=true"),
+    ])
+      .then(([rows, library]) => {
+        if (!active) return;
+        setMembers(rows);
+        setThumbnails(
+          Object.fromEntries(library.map((a) => [a.id, a.thumbnail])),
+        );
+        setPickerLoaded(true);
       })
       .catch((e) => {
         if (active) setPickerError(e.message);
@@ -45,7 +53,7 @@ export function CompositionSetup({
     return () => {
       active = false;
     };
-  }, [picker, assets]);
+  }, [picker, comp.project_id]);
   const patch = (value) =>
     act(async () =>
       setComp(await api(`/compositions/${comp.id}`, "PATCH", value)),
@@ -155,38 +163,49 @@ export function CompositionSetup({
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
-          {assets
-            .filter(
-              (a) =>
-                a.type !== "style" &&
-                !comp.assets.some((s) => s.asset_id === a.id) &&
-                a.name.toLowerCase().includes(query.toLowerCase()),
-            )
-            .map((a) => (
-              <ActionButton
-                type="button"
-                key={a.id}
-                className="asset-pick"
-                onClick={() =>
-                  act(async () => {
-                    setComp(
-                      await api(
-                        `/compositions/${comp.id}/assets/${a.id}`,
-                        "PUT",
-                        { role: a.name },
-                      ),
-                    );
-                    setPicker(false);
-                  })
-                }
-              >
-                {thumbnails[a.id] && (
-                  <img src={`/api/files/${thumbnails[a.id]}`} alt="" />
-                )}
-                <span>
-                  {a.name} · {assetTypes[a.type]}
-                </span>
-              </ActionButton>
+          {!pickerLoaded && !pickerError && (
+            <p role="status">Loading assets…</p>
+          )}
+          {pickerLoaded &&
+            (comp.project_id ? [true, false] : [false]).map((inProject) => (
+              <div key={String(inProject)} className="picker-group">
+                <h4>{inProject ? projectName : "All assets"}</h4>
+                {assets
+                  .filter(
+                    (a) =>
+                      a.type !== "style" &&
+                      !comp.assets.some((s) => s.asset_id === a.id) &&
+                      a.name.toLowerCase().includes(query.toLowerCase()) &&
+                      (!comp.project_id ||
+                        members.some((m) => m.id === a.id) === inProject),
+                  )
+                  .map((a) => (
+                    <ActionButton
+                      type="button"
+                      key={a.id}
+                      className="asset-pick"
+                      onClick={() =>
+                        act(async () => {
+                          setComp(
+                            await api(
+                              `/compositions/${comp.id}/assets/${a.id}`,
+                              "PUT",
+                              { role: a.name },
+                            ),
+                          );
+                          setPicker(false);
+                        })
+                      }
+                    >
+                      {thumbnails[a.id] && (
+                        <img src={`/api/files/${thumbnails[a.id]}`} alt="" />
+                      )}
+                      <span>
+                        {a.name} · {assetTypes[a.type]}
+                      </span>
+                    </ActionButton>
+                  ))}
+              </div>
             ))}
           <button type="button" onClick={() => setPicker(false)}>
             Close picker

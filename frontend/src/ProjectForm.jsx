@@ -8,7 +8,7 @@ import {
 import React, { useId, useState } from "react";
 import { StylePicker } from "./StylePicker";
 import { api } from "./api";
-export function ProjectForm({ project, act, changed }) {
+export function ProjectForm({ project, act, changed, onSaved }) {
   const helpId = useId();
   const [name, setName] = useState(project?.name || "");
   const [instructions, setInstructions] = useState(project?.instructions || "");
@@ -19,7 +19,7 @@ export function ProjectForm({ project, act, changed }) {
       onSubmit={(e) => {
         e.preventDefault();
         act(async () => {
-          await api(
+          const saved = await api(
             project ? `/projects/${project.id}` : "/projects",
             project ? "PATCH" : "POST",
             { name, instructions, style_asset_id: style },
@@ -29,6 +29,8 @@ export function ProjectForm({ project, act, changed }) {
             setInstructions("");
           }
           changed("Project saved.");
+          onSaved?.(saved);
+          if (!project) window.location.hash = `studio/project/${saved.id}`;
         });
       }}
     >
@@ -56,8 +58,8 @@ export function ProjectForm({ project, act, changed }) {
         />
       </div>
       <StylePicker value={style} onChange={setStyle} {...{ act }} />
-      <ActionButton className={project ? "secondary" : "primary"}>
-        {project ? "Save project" : "Create project"}
+      <ActionButton className="primary">
+        {project ? "Save" : "Create project"}
       </ActionButton>
     </ActionForm>
   );

@@ -1122,3 +1122,198 @@ kbd {
 .inspector .field-heading label {
   margin: 0;
 }
+
+/* Desktop workspaces share a persistent sidebar and image-first lists. */
+main,
+main.workspace-main {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 0 240px;
+}
+.studio-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 240px;
+  padding: var(--space-6) var(--space-4);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  overflow-y: auto;
+}
+.studio-sidebar h1 {
+  font-size: var(--text-lg);
+  padding: 0 var(--space-2);
+}
+.studio-sidebar h1 a {
+  text-decoration: none;
+}
+.studio-sidebar nav {
+  display: block;
+}
+.sidebar-group {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-6);
+}
+.sidebar-group h2 {
+  font-size: var(--text-sm);
+  color: var(--secondary-text);
+  margin: 0 var(--space-2) var(--space-2);
+}
+.sidebar-group a,
+.sidebar-group button {
+  text-align: left;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.sidebar-group a[aria-current="page"] {
+  background: var(--raised);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.sidebar-group .folder-link {
+  padding-left: var(--space-4);
+}
+.studio-sidebar footer {
+  margin-top: auto;
+  display: grid;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+.app-content {
+  padding: var(--space-8);
+  max-width: 1600px;
+  margin: auto;
+  min-width: 0;
+}
+.app-content > section {
+  margin-top: 0;
+}
+.workspace-main .app-content {
+  max-width: none;
+  padding: var(--space-4);
+}
+.composition-grid,
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+.image-tile {
+  display: block;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  text-decoration: none;
+}
+.image-tile a {
+  text-decoration: none;
+}
+.tile-image {
+  display: flex;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  height: auto;
+  object-fit: contain;
+  align-items: center;
+  justify-content: center;
+  background: var(--image-background);
+  color: var(--secondary-text);
+}
+.tile-copy {
+  padding: var(--space-3);
+  overflow-wrap: anywhere;
+}
+.tile-copy strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+.tile-copy small {
+  font-size: var(--text-xs);
+  color: var(--secondary-text);
+}
+.image-tile > button {
+  margin: 0 var(--space-3) var(--space-3);
+}
+.list-search {
+  max-width: 420px;
+}
+.project-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.project-folders a {
+  background: var(--panel);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+.project-summary {
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border);
+}
+.creative-direction {
+  white-space: pre-wrap;
+  max-width: 800px;
+}
+.project-style {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.project-style img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  background: var(--image-background);
+}
+.form-sheet {
+  width: min(560px, calc(100vw - 64px));
+  max-height: calc(100vh - 64px);
+  margin: auto;
+  padding: var(--space-6);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.form-sheet::backdrop {
+  background: #0008;
+}
+.form-sheet .panel {
+  border: 0;
+  margin: 0;
+  padding: var(--space-4) 0 0;
+}
+.library-picker {
+  display: grid;
+  gap: var(--space-2);
+}
+.library-picker .asset-pick {
+  width: 100%;
+}
+.library-picker .tile-image {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+}
+.picker-group h4 {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.workspace-main .generate-bar {
+  left: 240px;
+}
+
+.app-content > section + section {
+  margin-top: var(--space-12);
+}

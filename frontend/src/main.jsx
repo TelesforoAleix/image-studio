@@ -11,10 +11,12 @@ import { AssetPage } from "./AssetPage";
 import { ProjectForm } from "./ProjectForm";
 import { CompositionPage } from "./Composition";
 import { ProjectPage, Compositions } from "./Compositions";
+import { Sidebar } from "./Sidebar";
+import { Sheet } from "./Sheet";
 
 function App() {
   const [route, setRoute] = useState(() => {
-    const initial = location.hash.slice(1) || "assets";
+    const initial = location.hash.slice(1) || "studio";
     if (/\?output=\d+\.\d+$/.test(initial) && !history.state?.outputViewer) {
       history.replaceState(null, "", `#${initial.split("?")[0]}`);
       history.pushState({ outputViewer: true }, "", `#${initial}`);
@@ -22,6 +24,8 @@ function App() {
     return initial;
   });
   const [projects, setProjects] = useState([]);
+  const [compositionProject, setCompositionProject] = useState(undefined);
+  const [creatingProject, setCreatingProject] = useState(false);
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -50,7 +54,7 @@ function App() {
   useEffect(() => {
     let navigation = 0;
     const navigate = async () => {
-      const next = window.location.hash.slice(1) || "assets";
+      const next = window.location.hash.slice(1) || "studio";
       const request = ++navigation;
       try {
         if (next.split("?")[0] !== displayedRoute.current.split("?")[0])
@@ -76,13 +80,14 @@ function App() {
     act(async () => setProjects(await api("/projects")), false);
   }, [revision]);
   const base = route.split("?")[0];
+  useEffect(() => setCreatingProject(false), [base]);
   const requestedOutput = new URLSearchParams(route.split("?")[1] || "").get(
     "output",
   );
   const outputToken = /^\d+\.\d+$/.test(requestedOutput || "")
     ? requestedOutput
     : null;
-  const projectMatch = /^project\/(\d+)$/.exec(base);
+  const projectMatch = /^studio\/project\/(\d+)$/.exec(base);
   const compositionMatch =
     /^composition\/(\d+)(?:\/frame\/(\d+)(?:\/(setup|generate|history))?)?$/.exec(
       base,
@@ -109,6 +114,16 @@ function App() {
         history.replaceState({ outputViewer: true }, "");
       }, false);
     if (route === "library") window.location.replace("#assets");
+    if (base === "projects" || base === "compositions")
+      window.location.replace("#studio");
+    const oldProject = /^project\/(\d+)$/.exec(base);
+    const usedProject = new URLSearchParams(route.split("?")[1] || "").get(
+      "used_by_project",
+    );
+    if (oldProject || (base === "assets" && /^\d+$/.test(usedProject || "")))
+      window.location.replace(
+        `#studio/project/${oldProject?.[1] || usedProject}`,
+      );
     if (frameMatch)
       act(async () => {
         const frame = await api(`/variants/${frameMatch[1]}`);
@@ -121,8 +136,6 @@ function App() {
       active = false;
     };
   }, [route]);
-  const assetFilter =
-    new URLSearchParams(route.split("?")[1] || "").get("used_by_project") || "";
   const outputMatch = /^output\/(\d+)\/(\d+)$/.exec(base);
   const assetMatch = /^asset\/(\d+)$/.exec(base);
   return (
@@ -131,108 +144,98 @@ function App() {
       inert={outputToken ? true : undefined}
       className={compositionMatch ? "workspace-main" : undefined}
     >
-      <header className="studio-header">
-        <h1>
-          image studio
-          <span className="studio-dot" aria-hidden="true">
-            .
-          </span>
-        </h1>
-        <nav aria-label="Workspace">
-          <a
-            href="#assets"
-            aria-current={
-              route.startsWith("assets") || assetMatch ? "page" : undefined
-            }
-          >
-            Assets
-          </a>
-          <a
-            href="#compositions"
-            aria-current={
-              route === "compositions" || compositionMatch || frameMatch
-                ? "page"
-                : undefined
-            }
-          >
-            Compositions
-          </a>
-          <a
-            href="#projects"
-            aria-current={route === "projects" ? "page" : undefined}
-          >
-            Projects
-          </a>
-          <a
-            className="secondary-link"
-            href="#storage"
-            aria-current={route === "storage" ? "page" : undefined}
-          >
-            Storage
-          </a>
-        </nav>
-      </header>
-      {error && (
-        <div className="error" role="alert">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="notice toast" role="status">
-          {message}
-        </div>
-      )}
-      {outputMatch ? (
-        <p>Opening output…</p>
-      ) : route === "storage" ? (
-        <Storage act={act} />
-      ) : route === "projects" ? (
-        <section>
-          <h2>Projects</h2>
-          <p className="intro">
-            Give each project a name and shared creative direction.
-          </p>
-          <ProjectForm act={act} changed={changed} />
-          {projects.map((p) => (
-            <p key={p.id}>
-              <a href={`#project/${p.id}`}>{p.name}</a>
-            </p>
-          ))}
-        </section>
-      ) : route === "compositions" ? (
-        <Compositions {...{ projects, act }} />
-      ) : projectMatch ? (
-        <ProjectPage
-          key={projectMatch[1]}
-          projects={projects}
-          id={projectMatch[1]}
-          act={act}
-          changed={changed}
-        />
-      ) : compositionMatch ? (
-        <CompositionPage
-          key={compositionMatch[1]}
-          id={compositionMatch[1]}
-          frameId={compositionMatch[2]}
-          tab={compositionMatch[3]}
-          projects={projects}
-          act={act}
-        />
-      ) : assetMatch ? (
-        <AssetPage
-          key={assetMatch[1]}
-          id={assetMatch[1]}
-          projects={projects}
-          act={act}
-          changed={changed}
-        />
-      ) : (
-        <Library
-          projects={projects}
-          projectFilter={assetFilter}
-          act={act}
-          revision={revision}
-        />
+      <Sidebar
+        {...{ base, projects, act, compositionProject }}
+        newProject={() => setCreatingProject(true)}
+      />
+      <div
+        className="app-content"
+        aria-hidden={creatingProject || undefined}
+        inert={creatingProject || undefined}
+      >
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="notice toast" role="status">
+            {message}
+          </div>
+        )}
+        {outputMatch ? (
+          <p>Opening output…</p>
+        ) : route === "storage" ? (
+          <Storage act={act} />
+        ) : base === "studio" || base === "studio/none" ? (
+          <>
+            <Compositions
+              key={base}
+              {...{ projects, act }}
+              projectFilter={base === "studio/none" ? "none" : ""}
+            />
+            {base === "studio" && (
+              <section aria-label="Projects">
+                <div className="library-header">
+                  <h2>Projects</h2>
+                  <button onClick={() => setCreatingProject(true)}>
+                    New project
+                  </button>
+                </div>
+                <div className="project-folders">
+                  {projects.map((p) => (
+                    <a key={p.id} href={`#studio/project/${p.id}`}>
+                      ▱ {p.name}
+                    </a>
+                  ))}
+                </div>
+                {!projects.length && <p>No projects yet.</p>}
+              </section>
+            )}
+          </>
+        ) : projectMatch ? (
+          <ProjectPage
+            key={projectMatch[1]}
+            projects={projects}
+            id={projectMatch[1]}
+            act={act}
+            changed={changed}
+          />
+        ) : compositionMatch ? (
+          <CompositionPage
+            key={compositionMatch[1]}
+            id={compositionMatch[1]}
+            onProject={setCompositionProject}
+            frameId={compositionMatch[2]}
+            tab={compositionMatch[3]}
+            projects={projects}
+            act={act}
+          />
+        ) : assetMatch ? (
+          <AssetPage
+            key={assetMatch[1]}
+            id={assetMatch[1]}
+            projects={projects}
+            act={act}
+            changed={changed}
+          />
+        ) : (
+          <Library
+            projects={projects}
+            key={base}
+            type={/^assets\/([^/]+)$/.exec(base)?.[1] || ""}
+            act={act}
+            revision={revision}
+          />
+        )}
+      </div>
+      {creatingProject && (
+        <Sheet title="New project" onClose={() => setCreatingProject(false)}>
+          <ProjectForm
+            {...{ act, changed }}
+            onSaved={() => setCreatingProject(false)}
+          />
+        </Sheet>
       )}
       {outputToken && /^\d+\.\d+$/.test(outputToken) && (
         <OutputViewer token={outputToken} base={base} act={act} />

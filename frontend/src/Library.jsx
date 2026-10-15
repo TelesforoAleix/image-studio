@@ -1,23 +1,23 @@
-import { ActionButton, ActionForm, ActionSelect } from "./Actions";
+import { ActionButton, ActionForm } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
-import { AssetFields, blankAsset, assetTypes } from "./AssetFields";
-export function Library({ projects, act, revision, projectFilter = "" }) {
+import { AssetFields, blankAsset } from "./AssetFields";
+import { Sheet } from "./Sheet";
+import { AssetTiles } from "./AssetTiles";
+
+export function Library({ projects, act, revision, type = "" }) {
   const [assets, setAssets] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const [tag, setTag] = useState("");
-  const [project, setProject] = useState(projectFilter);
+  const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState(blankAsset);
-  useEffect(() => setProject(projectFilter), [projectFilter]);
   useEffect(() => {
     let active = true;
     setLoaded(false);
-    const query = new URLSearchParams();
-    if (tag) query.set("type", tag);
-    if (project) query.set("used_by_project", project);
     act(async () => {
-      const result = await api(`/assets?${query}`);
+      const params = new URLSearchParams({ thumbnails: "true" });
+      if (type) params.set("type", type);
+      const result = await api(`/assets?${params}`);
       if (active) {
         setAssets(result);
         setLoaded(true);
@@ -26,100 +26,71 @@ export function Library({ projects, act, revision, projectFilter = "" }) {
     return () => {
       active = false;
     };
-  }, [tag, project, revision]);
+  }, [type, revision]);
+  const filtered = assets.filter((a) =>
+    a.name.toLowerCase().includes(query.toLowerCase()),
+  );
   return (
     <section aria-labelledby="library-title">
       <div className="library-header">
         <h2 id="library-title">Assets</h2>
         <ActionButton
           className={creating ? "secondary" : "primary"}
-          onClick={() => setCreating(!creating)}
-        >
-          {creating ? "Close form" : "New asset"}
-        </ActionButton>
-      </div>
-      <div className="filters">
-        <label>
-          Type
-          <ActionSelect value={tag} onChange={(e) => setTag(e.target.value)}>
-            <option value="">All types</option>
-            {Object.entries(assetTypes).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </ActionSelect>
-        </label>
-        <label>
-          Project view
-          <ActionSelect
-            value={project}
-            onChange={(e) => setProject(e.target.value)}
-          >
-            <option value="">All assets</option>
-
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                Used by {p.name}
-              </option>
-            ))}
-          </ActionSelect>
-        </label>
-      </div>
-      {creating && (
-        <ActionForm
-          className="panel"
-          onSubmit={(e) => {
-            e.preventDefault();
-            act(async () => {
-              const result = await api("/assets", "POST", draft);
-              window.location.hash = `asset/${result.id}`;
-            });
+          onClick={() => {
+            setDraft(blankAsset());
+            setCreating(true);
           }}
         >
-          <h3>Create asset</h3>
-          <AssetFields value={draft} onChange={setDraft} projects={projects} />
-          <ActionButton className="primary">Create asset</ActionButton>
-        </ActionForm>
+          New asset
+        </ActionButton>
+      </div>
+      <label className="list-search">
+        Search assets
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
+      {creating && (
+        <Sheet title="New asset" onClose={() => setCreating(false)}>
+          <ActionForm
+            className="panel"
+            onSubmit={(e) => {
+              e.preventDefault();
+              act(async () => {
+                const result = await api("/assets", "POST", draft);
+                window.location.hash = `asset/${result.id}`;
+              });
+            }}
+          >
+            <AssetFields
+              value={draft}
+              onChange={setDraft}
+              projects={projects}
+            />
+            <ActionButton className="primary">Create asset</ActionButton>
+          </ActionForm>
+        </Sheet>
       )}
       {!loaded ? (
         <p role="status">Loading assets…</p>
-      ) : assets.length ? (
+      ) : (
         <>
           <p className="asset-count">
-            {assets.length} {assets.length === 1 ? "asset" : "assets"}
+            {filtered.length} {filtered.length === 1 ? "asset" : "assets"}
           </p>
-          <div className="asset-list">
-            {assets.map((asset) => (
-              <a
-                className="asset-card"
-                key={asset.id}
-                href={`#asset/${asset.id}`}
-              >
-                <h3>{asset.name}</h3>
-                <span className="badge">
-                  {assetTypes[asset.type]}
-                  {asset.type_tag ? ` · ${asset.type_tag}` : ""}
-                </span>
-                <p>
-                  {asset.description || "Add a description and references."}
-                </p>
-                <small>Global</small>
-              </a>
-            ))}
-          </div>
+          <AssetTiles assets={filtered} />
+          {!filtered.length && (
+            <div className="empty-library">
+              <h3>{query || type ? "No matching assets" : "No assets yet"}</h3>
+              <p>
+                Your reusable people, garments, objects and backgrounds will
+                live here.
+              </p>
+            </div>
+          )}
         </>
-      ) : (
-        <div className="empty-library">
-          <span className="empty-mark" aria-hidden="true">
-            +
-          </span>
-          <h3>{tag || project ? "No matching assets" : "No assets yet"}</h3>
-          <p>
-            Your reusable people, garments, objects and backgrounds will live
-            here.
-          </p>
-        </div>
       )}
     </section>
   );
