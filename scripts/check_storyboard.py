@@ -118,13 +118,14 @@ def main():
         )
         generation = wait(run["generations"][0]["id"])
         assert generation["placeholder"]
-        assert [r["hash"] for r in generation["references"]] == [
-            h for h in hashes if index != 1 or h != excluded["hash"]
-        ]
+        assert [r["hash"] for r in generation["references"]] == (
+            [done[-1]["outputs"][0]] if index else []
+        ) + [h for h in hashes if index != 1 or h != excluded["hash"]]
         done.append(generation)
     assert pack_count(comp["id"]) == 2
     print(
-        "PROOF C2 frame snapshots have 3/2/3 references; frame 2 excludes",
+        "PROOF C2 frame snapshots have 3/3/4 references, including previous frame "
+        "first; frame 2 excludes",
         excluded["hash"],
         "; composition_assets rows = 2",
         flush=True,

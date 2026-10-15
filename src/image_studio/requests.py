@@ -10,9 +10,16 @@ def render(content, references, info):
     family = info.get("prompt_family")
     indexed = list(enumerate(references, 1))
     if family == "gemini":
-        indexed.sort(key=lambda pair: pair[1].get("type") != "person")
+        indexed.sort(
+            key=lambda pair: (
+                pair[1].get("role") != "previous frame",
+                pair[1].get("type") != "person",
+            )
+        )
     refs = [r for _, r in indexed]
-    if family not in ("openai", "gemini"):
+    if family not in ("openai", "gemini") and not any(
+        r.get("role") == "previous frame" for r in refs
+    ):
         return content, refs
     numbers = {old: new for new, (old, _) in enumerate(indexed, 1)}
     content = re.sub(
@@ -25,7 +32,12 @@ def render(content, references, info):
         content,
     )
     legend = "\n".join(
-        f"Image {i}: {r['asset_name']}, {r['role']}, {r.get('type', 'other')}"
+        (
+            f"Image {i}: the previous frame — keep its setting, lighting "
+            "and characters continuous"
+            if r.get("role") == "previous frame"
+            else f"Image {i}: {r['asset_name']}, {r['role']}, {r.get('type', 'other')}"
+        )
         for i, r in enumerate(refs, 1)
     )
     parts = [legend, content] if family == "openai" else [content, legend]

@@ -16,7 +16,7 @@ def package(path):
     with ZipFile(io.BytesIO(data)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["format_version"] == (
-            5 if manifest["format"] == "image-studio-composition" else 2
+            6 if manifest["format"] == "image-studio-composition" else 2
         )
         assert manifest["exported_at"]
         assert len(archive.namelist()) == 1 + len(manifest["files"])

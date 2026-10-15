@@ -64,7 +64,7 @@ def test_brief_api_preview_export(client):
     assert c.get(path).json == comp  # preview never saves the draft
     assert c.patch(path, json={"brief": "Updated"}).json["brief"] == "Updated"
     package = unpack(c.get(path + "/export.zip").data)
-    assert package["format_version"] == 5
+    assert package["format_version"] == 6
     assert package["composition"]["brief"] == "Updated"
     assert "scene" not in package["composition"]
     assert "direction" not in package["composition"]

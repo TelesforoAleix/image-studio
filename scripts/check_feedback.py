@@ -136,7 +136,7 @@ def prove(request, wait, upload):
         io.BytesIO(request(f"/api/compositions/{comp['id']}/export.zip"))
     ) as archive:
         package = json.loads(archive.read("manifest.json"))
-    assert package["format_version"] == 5
+    assert package["format_version"] == 6
     exported = {
         g["id"]: g
         for f in package["frames"]
@@ -146,7 +146,7 @@ def prove(request, wait, upload):
     assert exported == rows
     assert request(path) == history and request("/api/storage") == storage
     print(
-        "PROOF FEEDBACK 4 complete composition package version 5 carries every "
+        "PROOF FEEDBACK 4 complete composition package version 6 carries every "
         "output feedback; records/storage unchanged",
         package,
         flush=True,

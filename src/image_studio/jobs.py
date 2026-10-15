@@ -92,6 +92,10 @@ def process_generation(identifier, url, *, client=None, root=None):
                 .where(generations.c.id == identifier)
                 .values(**values)
             )
+            if values.get("state") in ("done", "failed"):
+                from image_studio.generation_api import advance_sequence
+
+                advance_sequence(connection, identifier, root)
 
     try:
         with engine.begin() as connection:

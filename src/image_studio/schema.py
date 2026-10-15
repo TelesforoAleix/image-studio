@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     MetaData,
     Numeric,
@@ -125,6 +126,7 @@ variants = Table(
     Column("composition_id", ForeignKey("compositions.id"), nullable=False, index=True),
     Column("name", Text, nullable=False, server_default="Frame 1"),
     Column("instructions", Text, nullable=False, server_default=""),
+    Column("use_previous_frame", Boolean, nullable=False, server_default=text("true")),
     Column(
         "final_generation_id",
         ForeignKey("generations.id", use_alter=True, name="variant_final_generation"),
@@ -141,6 +143,31 @@ variants = Table(
     Column("deselected_images", JSONB, nullable=False, server_default="[]"),
     Column("selected_originals", JSONB, nullable=False, server_default="[]"),
 )
+frame_sequences = Table(
+    "frame_sequences",
+    metadata,
+    Column("id", Integer, Identity(), primary_key=True),
+    Column("composition_id", ForeignKey("compositions.id"), nullable=False),
+    Column("frames", JSONB, nullable=False),
+    Column("settings", JSONB, nullable=False),
+    Column("state", Text, nullable=False, server_default="running"),
+    Column("current_frame", Integer, nullable=False, server_default="0"),
+    Column(
+        "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
+    Column("finished_at", DateTime(timezone=True)),
+    Column("error", Text),
+    CheckConstraint(
+        "state IN ('running', 'stopping', 'done', 'failed', 'stopped')",
+        name="frame_sequence_state",
+    ),
+)
+Index(
+    "one_active_frame_sequence",
+    frame_sequences.c.composition_id,
+    unique=True,
+    postgresql_where=frame_sequences.c.state.in_(["running", "stopping"]),
+)
 generations = Table(
     "generations",
     metadata,
@@ -149,6 +176,7 @@ generations = Table(
         "run_id", String(36), nullable=False, index=True, default=lambda: str(uuid4())
     ),
     Column("retry_of", ForeignKey("generations.id")),
+    Column("sequence_id", ForeignKey("frame_sequences.id"), index=True),
     Column("kind", Text, nullable=False),
     Column("variant_id", ForeignKey("variants.id"), index=True),
     Column("asset_id", ForeignKey("assets.id"), index=True),

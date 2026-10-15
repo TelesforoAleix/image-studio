@@ -170,6 +170,14 @@ export function Storyboard({ comp, setComp, act, selected, navigate, flush }) {
                 {index + 1}. {v.name}
               </strong>
             </a>
+            {comp.sequences?.[0]?.frames.find((f) => f.frame_id === v.id) && (
+              <span className="badge" role="status">
+                {
+                  comp.sequences[0].frames.find((f) => f.frame_id === v.id)
+                    .state
+                }
+              </span>
+            )}
             <div className="actions">
               <ActionButton
                 className="plain"

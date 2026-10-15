@@ -1386,3 +1386,6 @@ main.workspace-main {
   margin: 0;
   font-size: var(--text-lg);
 }
+
+.previous-frame-reference img { width: 100%; max-height: 140px; object-fit: contain; }
+.previous-frame-reference figure { margin: 8px 0; }

@@ -117,7 +117,7 @@ def main():
         )
         if comp["style_asset_id"]:
             expected.add((comp["project_id"], comp["style_asset_id"]))
-    command.upgrade(config, "head")
+    command.upgrade(config, "0011")
     after = snapshot(engine)
     assert {k: v for k, v in after.items() if k != "project_assets"} == before
     assert {
@@ -135,13 +135,13 @@ def main():
     assert all(
         r["added_at"] and r["removed_at"] is None for r in after["project_assets"]
     )
-    command.upgrade(config, "head")
+    command.upgrade(config, "0011")
     assert snapshot(engine) == after
     command.downgrade(config, "0010")
     assert "project_assets" not in inspect(engine).get_table_names()
     assert snapshot(engine) == before
-    command.upgrade(config, "head")
-    command.upgrade(config, "head")
+    command.upgrade(config, "0011")
+    command.upgrade(config, "0011")
     restored = snapshot(engine)
     assert {k: v for k, v in restored.items() if k != "project_assets"} == before
     assert {

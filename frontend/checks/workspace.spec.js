@@ -59,6 +59,7 @@ async function workspace(page, { empty = false, references = [] } = {}) {
       name: "Synthetic composition",
       project_id: 1,
       kind: "storyboard",
+      sequences: [],
       brief: "Synthetic scene",
       assets: [],
       style: null,
@@ -67,6 +68,7 @@ async function workspace(page, { empty = false, references = [] } = {}) {
         id,
         name: `Frame ${id}`,
         instructions: "",
+        use_previous_frame: true,
         deselected_images: [],
         selected_originals: [],
         final: null,
@@ -80,6 +82,7 @@ async function workspace(page, { empty = false, references = [] } = {}) {
         ],
     others: [],
     posts: [],
+    sequencePosts: [],
     patches: [],
     orders: [],
     references,
@@ -114,7 +117,9 @@ async function workspace(page, { empty = false, references = [] } = {}) {
     else if (path === "/projects/1/assets") value = [asset];
     else if (path === "/models") value = models;
     else if (path === "/assets")
-      value = [{ id: 10, name: "Lamp", type: "object_vehicle", thumbnail: "lamp-1" }];
+      value = [
+        { id: 10, name: "Lamp", type: "object_vehicle", thumbnail: "lamp-1" },
+      ];
     else if (path === "/assets/10") value = asset;
     else if (path === "/compositions/1") {
       if (method === "PATCH") {
@@ -131,6 +136,31 @@ async function workspace(page, { empty = false, references = [] } = {}) {
         state.events.push("saved");
       }
       value = state.comp;
+    } else if (path === "/compositions/1/frame-sequences") {
+      const body = req.postDataJSON();
+      state.sequencePosts.push(body);
+      const start =
+        body.mode === "full"
+          ? 0
+          : body.mode === "next"
+            ? body.frame_id
+            : body.frame_id - 1;
+      const ids = body.mode === "next" ? [start + 1] : [1, 2, 3].slice(start);
+      const seq = {
+        id: 1,
+        state: "running",
+        current_frame: 0,
+        frames: ids.map((id, i) => ({
+          frame_id: id,
+          state: i ? "waiting" : "running",
+          run_id: i ? null : "sequence-run",
+        })),
+      };
+      state.comp.sequences = [seq];
+      value = seq;
+    } else if (path === "/frame-sequences/1/stop") {
+      state.comp.sequences[0].state = "stopping";
+      value = state.comp.sequences[0];
     } else if (path === "/compositions/1/assets/10") {
       if (method === "PUT")
         state.comp.assets = [
@@ -163,7 +193,15 @@ async function workspace(page, { empty = false, references = [] } = {}) {
     else if (path.endsWith("/preview"))
       value = {
         prompt: req.postDataJSON().brief,
-        references: state.references,
+        references: state.references.filter(
+          (r) =>
+            r.role !== "previous frame" ||
+            state.comp.variants.find((f) => f.id === Number(path.split("/")[2]))
+              .use_previous_frame,
+        ),
+        previous_frame: state.references.find(
+          (r) => r.role === "previous frame",
+        ),
       };
     else if (path === "/render") {
       const body = req.postDataJSON();
@@ -1043,4 +1081,107 @@ test("composition asset role guidance opens on hover and focus and Escape closes
   await trigger.press("Escape");
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   await expect(trigger).toBeFocused();
+});
+
+test("sequence menu has costs, modes, frame states and stop after current", async ({
+  page,
+}) => {
+  const state = await workspace(page);
+  await open(page);
+  await expect(generate(page)).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Sequence options", exact: true })
+    .click();
+  const menu = page.getByRole("menu", { name: "Sequence options" });
+  await expect(
+    menu.getByRole("menuitem", { name: /Generate the full sequence/ }),
+  ).toContainText("3 frames · estimated $0.18000");
+  await expect(
+    menu.getByRole("menuitem", { name: /Generate the next frame/ }),
+  ).toContainText("1 frame · estimated $0.06000");
+  await expect(
+    menu.getByRole("menuitem", { name: /Generate the rest/ }),
+  ).toContainText("3 frames · estimated $0.18000");
+  await menu
+    .getByRole("menuitem", { name: /Generate the full sequence/ })
+    .click();
+  await expect.poll(() => state.sequencePosts.length).toBe(1);
+  expect(state.sequencePosts[0]).toMatchObject({
+    mode: "full",
+    format: "16:9",
+    models: [{ model: "alpha", count: 2 }],
+  });
+  await expect(
+    page.locator(".frame-card").nth(0).getByRole("status"),
+  ).toHaveText("running");
+  await expect(
+    page.locator(".frame-card").nth(1).getByRole("status"),
+  ).toHaveText("waiting");
+  await page
+    .getByRole("button", { name: "Stop sequence", exact: true })
+    .click();
+  await expect(
+    page.getByText("Sequence stops after this frame", { exact: true }),
+  ).toBeVisible();
+  state.comp.sequences[0].state = "stopped";
+  state.comp.sequences[0].frames[0].state = "done";
+  state.comp.sequences[0].frames[1].state = "stopped";
+  await expect(
+    page.locator(".frame-card").nth(0).getByRole("status"),
+  ).toHaveText("done", { timeout: 6000 });
+  await expect(
+    page.locator(".frame-card").nth(1).getByRole("status"),
+  ).toHaveText("stopped");
+  await expect(
+    page.getByRole("button", { name: "Stop sequence", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("inspector previous thumbnail and switch, prompt legend and missing-image notice", async ({
+  page,
+}) => {
+  const previous = {
+    hash: "synthetic-previous",
+    role: "previous frame",
+    asset_id: null,
+    asset_name: "the previous frame",
+    type: "other",
+    frame_id: 1,
+    generation_id: 2,
+    output: 0,
+    source: "first output",
+  };
+  const state = await workspace(page, { references: [previous] });
+  await page.goto("/#composition/1/frame/2");
+  await expect(generate(page)).toBeEnabled();
+  await expect(
+    page.getByRole("img", { name: "Previous frame reference", exact: true }),
+  ).toHaveAttribute("src", "/api/files/synthetic-previous");
+  const toggle = page.getByRole("checkbox", { name: "Use the previous frame" });
+  await expect(toggle).toBeChecked();
+  await page.getByRole("button", { name: /View prompts/ }).click();
+  await expect(
+    page.getByRole("dialog", { name: "View prompts" }),
+  ).toContainText("Image 1: the previous frame · previous frame");
+  await page.getByRole("button", { name: "Close prompts" }).click();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect
+    .poll(() => state.comp.variants[1].use_previous_frame)
+    .toBe(false);
+  await expect(page.locator(".reference-total")).toHaveText(
+    "0 references selected",
+  );
+  state.references = [];
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await expect(
+    page.getByText(
+      "No previous-frame image is available; this frame will run without it.",
+    ),
+  ).toBeVisible();
+  await page.goto("/#composition/1/frame/1");
+  await expect(
+    page.getByRole("checkbox", { name: "Use the previous frame" }),
+  ).toHaveCount(0);
 });

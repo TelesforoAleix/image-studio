@@ -110,6 +110,7 @@ def main():
         ],
         key=lambda r: r["id"],
     )
+    command.upgrade(config, "head")
     app = create_app()
     with app.test_client() as client:
         for frame, old_text in previews.items():
@@ -117,6 +118,7 @@ def main():
             assert preview.status_code == 200, preview.json
             assert preview.json["prompt"] == old_text
     app.extensions["database"].dispose()
+    command.downgrade(config, "0010")
     command.upgrade(config, "0010")
     assert snapshot(engine) == after
     command.downgrade(config, "0009")
