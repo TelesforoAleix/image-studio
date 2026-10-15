@@ -588,15 +588,36 @@ Deleting a style hides it from choices and future assembly; existing snapshots
 remain readable. A deleted composition style does not fall back to the project
 until its own choice is cleared.
 
-An asset page separates **References**, **Originals**, and generated candidates
-waiting for review, followed by **Generate reference views**. Originals are all
-uploads; References are approved, non-rejected images of either source. An approved
-upload appears in both lists. Approve makes an upload or candidate a Reference;
-Unapprove retains the attachment and bytes. Generated references show linked
-original thumbnails in the order recorded by their producing generation. Lineage
-is read from that snapshot, never stored again on the image. For identical output
-hashes the earliest producing generation identifies the attachment's lineage;
-duplicated attachments share it. Rejected images stay hidden unless requested.
+The desktop asset page puts images first beside a right-hand **Details** inspector.
+**To review** appears first when generated candidates or active runs exist, then
+**References** and **Originals**. Focus a candidate tile and press **A** to approve
+or **R** to reject. **Approve all** and **Reject all** ask for inline confirmation
+when several candidates remain. **Show rejected** adds a final Rejected section.
+Originals are all uploads; References are approved, non-rejected images of either
+source. An approved upload appears in both lists. Unapprove retains the attachment
+and immutable bytes.
+
+Drop JPEG, PNG or WebP files onto **Originals**, or use **Upload**. Each file has its
+own progress and errors; unsupported types and files over 25 MiB are refused
+individually. Files upload one at a time in separate requests. The server still
+decodes and validates every file. Name, type, label, description and preservation
+rules autosave with field-level Saving…/Saved or error text; navigation and queuing
+flush pending edits. The existing description and preservation help remains.
+
+**Generate reference views**, the main primary action, opens a sheet with the
+existing model picker, output count, format, priced settings, advanced controls,
+editable prompt preview and estimated cost. **Generate** queues work; progress
+appears as placeholder tiles in To review until outputs arrive. **Past reference
+runs** retains history, feedback, compare and input snapshots behind a disclosure.
+The toolbar breadcrumb links back to Assets and its type. **Share** holds Export
+asset; **⋯** holds Duplicate asset and Delete asset with inline confirmation.
+
+Click any asset image to open the shared viewer. Generated references show their
+linked original thumbnails in the viewer footer, in snapshot order. Lineage is
+read from the producing generation, never stored again on the image. For identical
+output hashes the earliest producing generation identifies the attachment's
+lineage; duplicated attachments share it. Uploaded originals use an image-only
+viewer without generation feedback.
 
 In a composition, References are on by default. Unapproved Originals are off until
 ticked in the shared pack or for an individual frame. Frame toggles can exclude
@@ -802,7 +823,8 @@ px rem scale; spacing follows 4/8/12/16/24/32/48 px with three radius tokens.
 Both themes prove text contrast of at least 4.5:1 and borders/focus at least 3:1.
 
 Buttons default to bordered secondary. Each view has one filled `primary`:
-New/Create asset, Upload selected images, New/Create composition, Create project,
+New/Create asset, Generate reference views (Generate inside its sheet),
+New/Create composition, Create project,
 Save in the project edit sheet, Generate in the composition workspace,
 Provide/Save feedback in the output viewer, and Refresh in Storage.
 `plain` covers in-place Edit, Reset and reorder actions. `destructive` uses danger
@@ -824,7 +846,10 @@ pending/errors and announced confirmation expiry. Workspace proofs cover an iter
 without
 navigation, per-model prompt edits, finals in results/filmstrip, earlier-run reuse
 and restore, remembered settings, full-set drag/keyboard ordering, reference limits,
-keyboard menus, old-route redirects and autosave flushing/failures. Playwright is
+keyboard menus, old-route redirects and autosave flushing/failures. Asset proofs
+cover image/inspector order, review shortcuts and bulk confirmation, per-file drop
+upload progress/refusals, autosave/help, generation costs and placeholders, viewer
+lineage and keyboard toolbar menus. Playwright is
 an Apache-2.0 dev
 dependency; no screenshots, traces, image fixtures or owner records are retained.
 

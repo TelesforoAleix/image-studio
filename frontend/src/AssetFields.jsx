@@ -9,13 +9,14 @@ export const assetTypes = {
   style: "Style",
   other: "Other",
 };
-export function AssetFields({ value, onChange }) {
+export function AssetFields({ value, onChange, status }) {
   const helpId = useId();
   const field = (name, next) => onChange({ ...value, [name]: next });
   return (
     <>
       <label>
         Name
+        {status && <small role="status">{status.name || "Saved"}</small>}
         <ActionInput
           required
           value={value.name}
@@ -24,6 +25,7 @@ export function AssetFields({ value, onChange }) {
       </label>
       <label>
         Type
+        {status && <small role="status">{status.type || "Saved"}</small>}
         <ActionSelect
           required
           value={value.type}
@@ -38,6 +40,7 @@ export function AssetFields({ value, onChange }) {
       </label>
       <label>
         Label <span>(optional)</span>
+        {status && <small role="status">{status.type_tag || "Saved"}</small>}
         <ActionInput
           value={value.type_tag || ""}
           onChange={(e) => field("type_tag", e.target.value)}
@@ -49,6 +52,7 @@ export function AssetFields({ value, onChange }) {
           <label htmlFor={`${helpId}-description`}>Description</label>{" "}
           <FieldHelp label="Description" help={guidance.description} />
         </div>
+        {status && <small role="status">{status.description || "Saved"}</small>}
         <ActionTextarea
           id={`${helpId}-description`}
           aria-label="Description"
@@ -62,6 +66,7 @@ export function AssetFields({ value, onChange }) {
           <label htmlFor={`${helpId}-preserve`}>What must stay the same</label>{" "}
           <FieldHelp label="What must stay the same" help={guidance.preserve} />
         </div>
+        {status && <small role="status">{status.preserve || "Saved"}</small>}
         <ActionTextarea
           id={`${helpId}-preserve`}
           aria-label="What must stay the same"

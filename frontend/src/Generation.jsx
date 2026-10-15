@@ -1,3 +1,4 @@
+import { Sheet } from "./Sheet";
 import { useViewerSource, ComparePick, outputHref } from "./OutputViewer";
 import { usePolling } from "./usePolling";
 import { hasActive, GenerationProgress } from "./Progress";
@@ -73,7 +74,14 @@ export function ModelPicker({
   );
 }
 
-export function History({ path, act, revision, refresh }) {
+export function History({
+  path,
+  act,
+  revision,
+  refresh,
+  onItems,
+  images = [],
+}) {
   const [items, setItems] = useState([]);
   const previous = useRef("");
   const refreshRef = useRef(refresh);
@@ -83,6 +91,7 @@ export function History({ path, act, revision, refresh }) {
       const next = await api(path);
       if (!active()) return;
       setItems(next);
+      onItems?.(next);
       const signature = next.map((g) => g.outputs.join(",")).join(";");
       if (signature !== previous.current && refreshRef.current)
         await refreshRef.current();
@@ -111,7 +120,29 @@ export function History({ path, act, revision, refresh }) {
     if (!groups.has(key)) groups.set(key, { generations: [] });
     groups.get(key).generations.push(g);
   });
-  useViewerSource({ runs: [...groups.values()], saveFeedback }, [items]);
+  useViewerSource(
+    {
+      runs: [...groups.values()],
+      // Client-only image source: slot zero never represents a stored generation.
+      imageRun: {
+        generations: [
+          {
+            id: 0,
+            raw: true,
+            model: "original",
+            model_info: { display_name: "Original" },
+            outputs: images.filter((i) => !i.lineage).map((i) => i.hash),
+            imageIds: images.filter((i) => !i.lineage).map((i) => i.id),
+            references: [],
+          },
+        ],
+      },
+      saveFeedback,
+      lineage: (hash) =>
+        images.find((i) => i.hash === hash && i.lineage)?.lineage,
+    },
+    [items, images],
+  );
   return (
     <div className="image-grid">
       {pollError && (
@@ -205,7 +236,17 @@ export function History({ path, act, revision, refresh }) {
   );
 }
 
-export function ReferenceGeneration({ id, act, refresh, inputRevision }) {
+export function ReferenceGeneration({
+  id,
+  act,
+  refresh,
+  inputRevision,
+  open,
+  onClose,
+  flush,
+  onItems,
+  images,
+}) {
   const [models, setModels] = useState([]);
   const [choices, setChoices] = useState([]);
   const [format, setFormat] = useState("1:1");
@@ -231,49 +272,60 @@ export function ReferenceGeneration({ id, act, refresh, inputRevision }) {
     };
   }, [id, revision, inputRevision]);
   return (
-    <div className="panel">
-      <h3>Generate reference views</h3>
-      {loadError && (
-        <p className="error" role="alert">
-          {loadError}
-        </p>
+    <>
+      {open && (
+        <Sheet title="Generate reference views" onClose={onClose}>
+          {loadError && (
+            <p className="error" role="alert">
+              {loadError}
+            </p>
+          )}
+          <p>
+            Uses this asset’s uploaded photos. Approve or reject each candidate
+            above.
+          </p>
+          <ActionForm
+            success="Reference views queued."
+            onSubmit={(e) => {
+              e.preventDefault();
+              act(async () => {
+                await flush();
+                await api(`/assets/${id}/generations`, "POST", choices[0]);
+                setRevision((n) => n + 1);
+                onClose();
+              });
+            }}
+          >
+            <ModelRequests
+              {...{
+                models,
+                choices,
+                setChoices,
+                format,
+                setFormat,
+                revision,
+              }}
+              content={preview?.prompt}
+              references={preview?.references || []}
+              onPreview={setRendered}
+              limit={1}
+            />
+            <ActionButton
+              className="primary"
+              disabled={!rendered || choices.length !== 1}
+            >
+              Generate
+            </ActionButton>
+          </ActionForm>
+        </Sheet>
       )}
-      <p>
-        Uses this asset’s uploaded photos. Approve or reject each candidate
-        above.
-      </p>
-      <ActionForm
-        success="Reference views queued."
-        onSubmit={(e) => {
-          e.preventDefault();
-          act(async () => {
-            await api(`/assets/${id}/generations`, "POST", choices[0]);
-            setRevision((n) => n + 1);
-          });
-        }}
-      >
-        <ModelRequests
-          {...{
-            models,
-            choices,
-            setChoices,
-            format,
-            setFormat,
-            revision,
-          }}
-          content={preview?.prompt}
-          references={preview?.references || []}
-          onPreview={setRendered}
-          limit={1}
+      <details>
+        <summary>Past reference runs</summary>
+        <History
+          path={`/assets/${id}/generations`}
+          {...{ act, revision, refresh, onItems, images }}
         />
-        <ActionButton disabled={!rendered || choices.length !== 1}>
-          Generate reference views
-        </ActionButton>
-      </ActionForm>
-      <History
-        path={`/assets/${id}/generations`}
-        {...{ act, revision, refresh }}
-      />
-    </div>
+      </details>
+    </>
   );
 }

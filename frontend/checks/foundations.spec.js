@@ -346,60 +346,62 @@ test("queueing starts run polling and reference history also stops idle", async 
   await expect.poll(() => state.polls).toBeGreaterThan(before);
   state.status = "done";
   await page.goto("/#asset/1");
+  await page.getByText("Past reference runs", { exact: true }).click();
   await expect(page.getByText("done · 1/2")).toBeVisible();
   await page.waitForTimeout(50);
   const idle = state.polls;
   await page.clock.fastForward(12000);
   expect(state.polls).toBe(idle);
   await page
+    .getByRole("button", { name: "Generate reference views", exact: true })
+    .click();
+  await page
     .getByRole("checkbox", { name: "Synthetic model", exact: true })
     .check();
   await page.clock.fastForward(300);
-  await page
-    .getByRole("button", { name: "Generate reference views", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect.poll(() => state.queued).toBe(2);
-  await expect(page.getByText(/Waiting for the image service/)).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "To review" })
+      .getByText(/Waiting for the image service/)
+      .first(),
+  ).toBeVisible();
   console.log("QUEUE: frame and reference-view queueing restart idle polling");
 });
 
-test("actions disable only their conflicting form, report errors locally and dismiss success", async ({
+test("asset autosave errors stay local while other actions remain usable", async ({
   page,
 }) => {
   const state = await mock(page);
-  await page.clock.install();
   await page.goto("/#asset/1");
   let release;
   state.hold = new Promise((resolve) => {
     release = resolve;
   });
-  await page.getByRole("button", { name: "Save asset", exact: true }).click();
-  await expect(page.getByRole("button", { name: /Save asset/ })).toBeDisabled();
+  await page.getByRole("textbox", { name: /^Name/ }).fill("Synthetic changed");
   await expect(
-    page.getByRole("button", { name: "Upload selected images" }),
+    page.getByRole("button", { name: "Upload", exact: true }),
   ).toBeEnabled();
   await expect(
-    page.getByRole("button", { name: "Duplicate asset" }),
+    page.getByRole("button", { name: "Generate reference views" }),
   ).toBeEnabled();
   state.fail = true;
   release();
-  await expect(page.getByRole("alert")).toHaveText("Synthetic save failure");
   await expect(
-    page
-      .getByRole("button", { name: "Save asset" })
-      .locator("..")
-      .getByRole("alert"),
+    page.getByRole("status").filter({ hasText: "Synthetic save failure" }),
   ).toBeVisible();
   state.fail = false;
   state.hold = null;
-  await page.getByRole("button", { name: "Save asset", exact: true }).click();
-  await expect(page.getByText("Asset saved.", { exact: true })).toBeVisible();
-  await page.clock.fastForward(4100);
-  await expect(page.getByText("Asset saved.", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  console.log(
-    "ACTIONS: local pending, local error, announced auto-dismissed confirmation",
-  );
+  await page
+    .getByRole("textbox", { name: /^Name/ })
+    .fill("Synthetic recovered");
+  await expect(
+    page
+      .getByRole("textbox", { name: /^Name/ })
+      .locator("..")
+      .getByRole("status"),
+  ).toHaveText("Saved");
 });
 
 test("running progress falls back to elapsed time without a profile estimate", async ({
