@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { guardNavigation } from "./navigation";
+import { assetValues } from "./AssetFields";
 import { api } from "./api";
 
-export function useAutosave(composition, frame, setComp) {
-  const initial = {
-    name: composition.name,
-    brief: composition.brief,
-    frameName: frame.name,
-    instructions: frame.instructions,
-  };
+export function useAutosave(composition, frame, setComp, asset = false) {
+  const initial = asset
+    ? assetValues(composition)
+    : {
+        name: composition.name,
+        brief: composition.brief,
+        frameName: frame.name,
+        instructions: frame.instructions,
+      };
   const [value, setValue] = useState(initial);
   const [status, setStatus] = useState({});
   const current = useRef(initial);
@@ -27,13 +30,17 @@ export function useAutosave(composition, frame, setComp) {
       const comp = {},
         variant = {};
       for (const key of dirty) {
-        if (key === "frameName" || key === "instructions")
+        if (!asset && (key === "frameName" || key === "instructions"))
           variant[key === "frameName" ? "name" : key] = snapshot[key];
         else comp[key] = snapshot[key];
       }
       try {
         if (Object.keys(comp).length)
-          await api(`/compositions/${composition.id}`, "PATCH", comp);
+          await api(
+            `/${asset ? "assets" : "compositions"}/${composition.id}`,
+            "PATCH",
+            comp,
+          );
         if (Object.keys(variant).length)
           await api(`/variants/${frame.id}`, "PATCH", variant);
         for (const key of dirty) saved.current[key] = snapshot[key];
@@ -41,9 +48,13 @@ export function useAutosave(composition, frame, setComp) {
           setComp((old) => ({
             ...old,
             ...comp,
-            variants: old.variants.map((v) =>
-              v.id === frame.id ? { ...v, ...variant } : v,
-            ),
+            ...(asset
+              ? {}
+              : {
+                  variants: old.variants.map((v) =>
+                    v.id === frame.id ? { ...v, ...variant } : v,
+                  ),
+                }),
           }));
         if (mounted.current)
           setStatus((old) => ({
@@ -119,13 +130,13 @@ export function useAutosave(composition, frame, setComp) {
         s = saved.current;
       const comp = {},
         variant = {};
-      for (const key of ["name", "brief"])
+      for (const key of asset ? Object.keys(v) : ["name", "brief"])
         if (v[key] !== s[key]) comp[key] = v[key];
-      for (const key of ["frameName", "instructions"])
+      for (const key of asset ? [] : ["frameName", "instructions"])
         if (v[key] !== s[key])
           variant[key === "frameName" ? "name" : key] = v[key];
       for (const [path, body] of [
-        [`/compositions/${composition.id}`, comp],
+        [`/${asset ? "assets" : "compositions"}/${composition.id}`, comp],
         [`/variants/${frame.id}`, variant],
       ])
         if (Object.keys(body).length)

@@ -66,9 +66,9 @@ export function orderedOutputs(run) {
         .flatMap((g) =>
           g.outputs.map((hash, output) => ({
             g,
-            output,
+            output: g.raw ? g.imageIds[output] : output,
             hash,
-            key: outputKey(g.id, output),
+            key: outputKey(g.id, g.raw ? g.imageIds[output] : output),
           })),
         ),
     );
@@ -84,7 +84,10 @@ export function OutputViewer({ token, base, act }) {
   const origin = useRef(document.activeElement);
   const [id, index] = token.split(".").map(Number);
   const runs = data?.runs || [];
-  const all = runs.flatMap(orderedOutputs);
+  const all = [
+    ...runs.flatMap(orderedOutputs),
+    ...(data?.imageRun ? orderedOutputs(data.imageRun) : []),
+  ];
   const current =
     all.find((o) => o.key === token) ||
     (fallback?.id === id && fallback.outputs[index]
@@ -98,7 +101,7 @@ export function OutputViewer({ token, base, act }) {
   useEffect(() => {
     let active = true;
     setError("");
-    if (!all.some((o) => o.key === token))
+    if (id !== 0 && !all.some((o) => o.key === token))
       api(`/generations/${id}`)
         .then((g) => {
           if (active) {
@@ -150,8 +153,13 @@ export function OutputViewer({ token, base, act }) {
   const runIndex = runs.findIndex((r) =>
     r.generations.some((g) => g.id === id),
   );
-  const row =
-    runIndex < 0 ? (current ? [current] : []) : orderedOutputs(runs[runIndex]);
+  const row = current?.g.raw
+    ? orderedOutputs(data.imageRun)
+    : runIndex < 0
+      ? current
+        ? [current]
+        : []
+      : orderedOutputs(runs[runIndex]);
   const position = row.findIndex((o) => o.key === token);
   const step = (delta) => {
     const target = row[position + delta];
@@ -337,69 +345,98 @@ export function OutputViewer({ token, base, act }) {
         <footer className="viewer-footer">
           <div className="viewer-metadata" aria-live="polite">
             <strong>
-              {current.g.model_info.display_name} · Output {index + 1}
+              {current.g.raw
+                ? "Original image"
+                : `${current.g.model_info.display_name} · Output ${index + 1}`}
             </strong>
-            <span>
-              {new Date(current.g.created_at).toLocaleString()}
-              {current.g.finished_at && current.g.started_at
-                ? ` · ${Math.max(0, Math.round((Date.parse(current.g.finished_at) - Date.parse(current.g.started_at)) / 1000))} s`
-                : ""}
-            </span>
-            <span>
-              {current.g.settings?.format || "Format unknown"} ·{" "}
-              {current.g.settings?.quality || "Quality unknown"}
-            </span>
-            <span>
-              Estimated cost:{" "}
-              {current.g.estimated_cost == null
-                ? "Unavailable"
-                : `$${current.g.estimated_cost}`}
-            </span>
-            <span>
-              {current.g.feedback?.[index]?.verdict === "good"
-                ? "Good"
-                : current.g.feedback?.[index]?.verdict === "not_good"
-                  ? "Not good"
-                  : "Unrated"}
-            </span>
-          </div>
-          <div className="viewer-actions">
-            <Feedback
-              key={token}
-              ref={feedback}
-              shortcuts
-              primary
-              generation={current.g}
-              output={index}
-              act={act}
-              saved={saved}
-            />
-            {data?.choose && current.g.state === "done" && (
-              <ActionButton
-                data-final
-                aria-pressed={
-                  data.final?.generation_id === id &&
-                  data.final?.output === index
-                }
-                onClick={() => data.choose(current.g, index)}
-              >
-                {data.final?.generation_id === id &&
-                data.final?.output === index
-                  ? "Final"
-                  : "Mark final"}{" "}
-                <kbd>F</kbd>
-              </ActionButton>
+            {!current.g.raw && (
+              <>
+                <span>
+                  {new Date(current.g.created_at).toLocaleString()}
+                  {current.g.finished_at && current.g.started_at
+                    ? ` · ${Math.max(0, Math.round((Date.parse(current.g.finished_at) - Date.parse(current.g.started_at)) / 1000))} s`
+                    : ""}
+                </span>
+                <span>
+                  {current.g.settings?.format || "Format unknown"} ·{" "}
+                  {current.g.settings?.quality || "Quality unknown"}
+                </span>
+                <span>
+                  Estimated cost:{" "}
+                  {current.g.estimated_cost == null
+                    ? "Unavailable"
+                    : `$${current.g.estimated_cost}`}
+                </span>
+                <span>
+                  {current.g.feedback?.[index]?.verdict === "good"
+                    ? "Good"
+                    : current.g.feedback?.[index]?.verdict === "not_good"
+                      ? "Not good"
+                      : "Unrated"}
+                </span>
+              </>
             )}
-            <details>
-              <summary>Technical details</summary>
-              <p>Prompt as sent</p>
-              <pre>{current.g.prompt}</pre>
-              <p>Request fields</p>
-              <pre>{JSON.stringify(current.g.request_fields, null, 2)}</pre>
-              <p>Snapshot</p>
-              <pre>{JSON.stringify(current.g, null, 2)}</pre>
-            </details>
           </div>
+          {!current.g.raw && data?.lineage?.(current.hash) && (
+            <div className="lineage">
+              <small>
+                From originals · generation{" "}
+                {data.lineage(current.hash).generation_id}
+              </small>
+              {data.lineage(current.hash).originals.map((ref, i) => (
+                <a
+                  key={i}
+                  href={`/api/files/${ref.hash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img
+                    src={`/api/files/${ref.hash}`}
+                    alt={`Original ${i + 1}`}
+                  />
+                </a>
+              ))}
+            </div>
+          )}
+          {!current.g.raw && (
+            <div className="viewer-actions">
+              <Feedback
+                key={token}
+                ref={feedback}
+                shortcuts
+                primary
+                generation={current.g}
+                output={index}
+                act={act}
+                saved={saved}
+              />
+              {data?.choose && current.g.state === "done" && (
+                <ActionButton
+                  data-final
+                  aria-pressed={
+                    data.final?.generation_id === id &&
+                    data.final?.output === index
+                  }
+                  onClick={() => data.choose(current.g, index)}
+                >
+                  {data.final?.generation_id === id &&
+                  data.final?.output === index
+                    ? "Final"
+                    : "Mark final"}{" "}
+                  <kbd>F</kbd>
+                </ActionButton>
+              )}
+              <details>
+                <summary>Technical details</summary>
+                <p>Prompt as sent</p>
+                <pre>{current.g.prompt}</pre>
+                <p>Request fields</p>
+                <pre>{JSON.stringify(current.g.request_fields, null, 2)}</pre>
+                <p>Snapshot</p>
+                <pre>{JSON.stringify(current.g, null, 2)}</pre>
+              </details>
+            </div>
+          )}
         </footer>
       )}
     </dialog>,

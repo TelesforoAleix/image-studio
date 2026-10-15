@@ -936,6 +936,7 @@ test("asset generated references and history use the viewer with feedback and no
   ).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
   await expect(link).toBeFocused();
+  await page.getByText("Past reference runs", { exact: true }).click();
   await expect(
     page
       .locator(".image-info")
