@@ -1,3 +1,4 @@
+import { performAction } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
@@ -16,22 +17,22 @@ function App() {
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [pending, setPending] = useState(0);
-  const busy = pending > 0;
-  async function act(task, clear = true) {
-    setPending((n) => n + 1);
-    if (clear) {
-      setError("");
-      setMessage("");
-    }
-    try {
-      await task();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setPending((n) => n - 1);
-    }
+  async function act(task, action = true) {
+    const hash = window.location.hash;
+    return performAction(
+      async () => {
+        await task();
+        if (action && window.location.hash !== hash)
+          setMessage((current) => current || "Done.");
+      },
+      action ? undefined : (err) => setError(err.message),
+    );
   }
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
   const changed = (text) => {
     setMessage(text);
     setRevision((n) => n + 1);
@@ -40,7 +41,6 @@ function App() {
     const navigate = () => {
       setRoute(window.location.hash.slice(1) || "assets");
       setError("");
-      setMessage("");
     };
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
@@ -118,31 +118,26 @@ function App() {
         </div>
       )}
       {message && (
-        <div className="notice" role="status">
+        <div className="notice toast" role="status">
           {message}
         </div>
-      )}
-      {busy && (
-        <p className="progress" role="status">
-          Working…
-        </p>
       )}
       {outputMatch ? (
         <OutputPage
           key={route}
           id={outputMatch[1]}
           output={Number(outputMatch[2])}
-          {...{ act, busy }}
+          {...{ act }}
         />
       ) : route === "storage" ? (
-        <Storage act={act} busy={busy} />
+        <Storage act={act} />
       ) : route === "projects" ? (
         <section>
           <h2>Projects</h2>
           <p className="intro">
             Give each project a name and shared creative direction.
           </p>
-          <ProjectForm act={act} changed={changed} busy={busy} />
+          <ProjectForm act={act} changed={changed} />
           {projects.map((p) => (
             <p key={p.id}>
               <a href={`#project/${p.id}`}>{p.name}</a>
@@ -150,7 +145,7 @@ function App() {
           ))}
         </section>
       ) : route === "compositions" ? (
-        <Compositions {...{ projects, act, busy }} />
+        <Compositions {...{ projects, act }} />
       ) : projectMatch ? (
         <ProjectPage
           key={projectMatch[1]}
@@ -158,7 +153,6 @@ function App() {
           id={projectMatch[1]}
           act={act}
           changed={changed}
-          busy={busy}
         />
       ) : compositionMatch ? (
         <CompositionPage
@@ -168,7 +162,6 @@ function App() {
           tab={compositionMatch[3]}
           projects={projects}
           act={act}
-          busy={busy}
         />
       ) : assetMatch ? (
         <AssetPage
@@ -177,7 +170,6 @@ function App() {
           projects={projects}
           act={act}
           changed={changed}
-          busy={busy}
         />
       ) : (
         <Library
@@ -185,7 +177,6 @@ function App() {
           projectFilter={assetFilter}
           act={act}
           revision={revision}
-          busy={busy}
         />
       )}
     </main>

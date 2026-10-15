@@ -1,3 +1,6 @@
+import { usePolling } from "./usePolling";
+import { hasActive, GenerationProgress } from "./Progress";
+import { ActionButton, ActionForm, ActionSelect } from "./Actions";
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { ModelRequests } from "./ModelRequests";
@@ -17,7 +20,7 @@ export function ModelPicker({
     <>
       <label>
         Model
-        <select
+        <ActionSelect
           required
           value={model}
           onChange={(e) => setModel(e.target.value)}
@@ -28,7 +31,7 @@ export function ModelPicker({
               {m.model_info.display_name}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
       <div className="model-list">
         {models.map((m) => (
@@ -54,7 +57,7 @@ export function ModelPicker({
       </p>
       <label>
         Outputs
-        <select
+        <ActionSelect
           value={count}
           onChange={(e) => setCount(Number(e.target.value))}
         >
@@ -63,45 +66,43 @@ export function ModelPicker({
               {n}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
     </>
   );
 }
 
-export function History({ path, act, revision, refresh, busy }) {
+export function History({ path, act, revision, refresh }) {
   const [items, setItems] = useState([]);
   const previous = useRef("");
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
-  useEffect(() => {
-    let active = true;
-    let timer;
-    async function load() {
-      await act(async () => {
-        const next = await api(path);
-        if (!active) return;
-        setItems(next);
-        const signature = next.map((g) => g.outputs.join(",")).join(";");
-        if (signature !== previous.current && refreshRef.current)
-          await refreshRef.current();
-        previous.current = signature;
-      }, false);
-      if (active) timer = setTimeout(load, 3000);
-    }
-    load();
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [path, revision]);
+  const pollError = usePolling(
+    async (active) => {
+      const next = await api(path);
+      if (!active()) return;
+      setItems(next);
+      const signature = next.map((g) => g.outputs.join(",")).join(";");
+      if (signature !== previous.current && refreshRef.current)
+        await refreshRef.current();
+      previous.current = signature;
+    },
+    hasActive(items),
+    path,
+    revision,
+  );
   return (
     <div className="image-grid">
+      {pollError && (
+        <p className="error" role="alert">
+          {pollError}
+        </p>
+      )}
       {items.map((g) => (
         <article className="image-card" key={g.id}>
           <div className="image-info">
             <strong>
-              {g.state} · {g.outputs.length}/{g.count}
+              <GenerationProgress generation={g} />
             </strong>
             <span>{g.model_info.display_name}</span>
             <ModelCost info={g.model_info} />
@@ -116,7 +117,7 @@ export function History({ path, act, revision, refresh, busy }) {
                 <Feedback
                   generation={g}
                   output={i}
-                  {...{ act, busy }}
+                  {...{ act }}
                   saved={(feedback) =>
                     setItems((old) =>
                       old.map((row) =>
@@ -182,27 +183,45 @@ export function History({ path, act, revision, refresh, busy }) {
   );
 }
 
-export function ReferenceGeneration({ id, act, busy, refresh, inputRevision }) {
+export function ReferenceGeneration({ id, act, refresh, inputRevision }) {
   const [models, setModels] = useState([]);
   const [choices, setChoices] = useState([]);
   const [format, setFormat] = useState("1:1");
   const [rendered, setRendered] = useState(null);
   const [preview, setPreview] = useState(null);
   const [revision, setRevision] = useState(0);
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
-    act(async () => {
-      setModels(await api("/models"));
-      setPreview(await api(`/assets/${id}/reference-preview`));
-    }, false);
+    let active = true;
+    Promise.all([api("/models"), api(`/assets/${id}/reference-preview`)])
+      .then(([nextModels, nextPreview]) => {
+        if (active) {
+          setModels(nextModels);
+          setPreview(nextPreview);
+          setLoadError("");
+        }
+      })
+      .catch((e) => {
+        if (active) setLoadError(e.message);
+      });
+    return () => {
+      active = false;
+    };
   }, [id, revision, inputRevision]);
   return (
     <div className="panel">
       <h3>Generate reference views</h3>
+      {loadError && (
+        <p className="error" role="alert">
+          {loadError}
+        </p>
+      )}
       <p>
         Uses this asset’s uploaded photos. Approve or reject each candidate
         above.
       </p>
-      <form
+      <ActionForm
+        success="Reference views queued."
         onSubmit={(e) => {
           e.preventDefault();
           act(async () => {
@@ -218,7 +237,6 @@ export function ReferenceGeneration({ id, act, busy, refresh, inputRevision }) {
             setChoices,
             format,
             setFormat,
-            busy,
             revision,
           }}
           content={preview?.prompt}
@@ -226,13 +244,13 @@ export function ReferenceGeneration({ id, act, busy, refresh, inputRevision }) {
           onPreview={setRendered}
           limit={1}
         />
-        <button disabled={busy || !rendered || choices.length !== 1}>
+        <ActionButton disabled={!rendered || choices.length !== 1}>
           Generate reference views
-        </button>
-      </form>
+        </ActionButton>
+      </ActionForm>
       <History
         path={`/assets/${id}/generations`}
-        {...{ act, revision, refresh, busy }}
+        {...{ act, revision, refresh }}
       />
     </div>
   );

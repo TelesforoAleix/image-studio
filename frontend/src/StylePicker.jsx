@@ -1,7 +1,8 @@
+import { ActionSelect } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 
-export function StylePicker({ value, onChange, act, busy, inherit = false }) {
+export function StylePicker({ value, onChange, act, inherit = false }) {
   const [styles, setStyles] = useState([]);
   useEffect(() => {
     act(async () => setStyles(await api("/assets?type=style")), false);
@@ -9,9 +10,8 @@ export function StylePicker({ value, onChange, act, busy, inherit = false }) {
   return (
     <label>
       Style
-      <select
+      <ActionSelect
         value={value ?? ""}
-        disabled={busy}
         onChange={(e) =>
           onChange(e.target.value ? Number(e.target.value) : null)
         }
@@ -29,7 +29,7 @@ export function StylePicker({ value, onChange, act, busy, inherit = false }) {
             {s.name}
           </option>
         ))}
-      </select>
+      </ActionSelect>
     </label>
   );
 }

@@ -1,3 +1,4 @@
+import { ActionGroup, ActionButton, ActionForm, ActionSelect } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { Runs, PinnedReferences } from "./Runs";
@@ -5,14 +6,7 @@ import { ModelRequests } from "./ModelRequests";
 import { Storyboard } from "./CompositionControls";
 import { CompositionSetup } from "./CompositionSetup";
 
-export function CompositionPage({
-  id,
-  frameId,
-  tab = "setup",
-  projects,
-  act,
-  busy,
-}) {
+export function CompositionPage({ id, frameId, tab = "setup", projects, act }) {
   const [comp, setComp] = useState(null);
   const [assets, setAssets] = useState([]);
   const [assetId, setAssetId] = useState("");
@@ -24,6 +18,7 @@ export function CompositionPage({
   const [scene, setScene] = useState("");
   const [instructions, setInstructions] = useState("");
   const [preview, setPreview] = useState(null);
+  const [previewError, setPreviewError] = useState("");
   const [draftContent, setDraftContent] = useState("");
   const [format, setFormat] = useState("1:1");
   const [rendered, setRendered] = useState(null);
@@ -70,14 +65,25 @@ export function CompositionPage({
     setPreview(null);
     const timer = setTimeout(
       () =>
-        act(async () => {
-          const result = await api(`/variants/${variant.id}/preview`, "POST", {
-            direction,
-            scene,
-            instructions,
-          });
-          if (active) setPreview(result);
-        }, false),
+        (async () => {
+          try {
+            const result = await api(
+              `/variants/${variant.id}/preview`,
+              "POST",
+              {
+                direction,
+                scene,
+                instructions,
+              },
+            );
+            if (active) {
+              setPreview(result);
+              setPreviewError("");
+            }
+          } catch (e) {
+            if (active) setPreviewError(e.message);
+          }
+        })(),
       200,
     );
     return () => {
@@ -125,11 +131,10 @@ export function CompositionPage({
         <h2>{comp.name}</h2>
         <a href="#compositions">Compositions</a>
       </div>
-      <div className="composition-header">
+      <ActionGroup className="composition-header">
         <label>
           Kind
-          <select
-            disabled={busy}
+          <ActionSelect
             value={comp.kind}
             onChange={(e) =>
               act(async () =>
@@ -145,12 +150,11 @@ export function CompositionPage({
               Single image
             </option>
             <option value="storyboard">Storyboard</option>
-          </select>
+          </ActionSelect>
         </label>
         <label>
           Project
-          <select
-            disabled={busy}
+          <ActionSelect
             value={comp.project_id ?? ""}
             onChange={(e) =>
               act(async () =>
@@ -168,9 +172,9 @@ export function CompositionPage({
                 {p.name}
               </option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
-      </div>
+      </ActionGroup>
       <div className="actions">
         <a
           className="button-link"
@@ -184,8 +188,8 @@ export function CompositionPage({
         >
           Export package
         </a>
-        <button
-          disabled={busy}
+        <ActionButton
+          className={tab === "history" ? "primary" : "secondary"}
           onClick={() =>
             act(async () => {
               const copy = await api(
@@ -197,10 +201,13 @@ export function CompositionPage({
           }
         >
           Duplicate
-        </button>
-        <button className="danger" onClick={() => setConfirming(true)}>
+        </ActionButton>
+        <ActionButton
+          className="destructive"
+          onClick={() => setConfirming(true)}
+        >
           Delete…
-        </button>
+        </ActionButton>
       </div>
       <p className="export-note">
         {comp.variants.some((v) => !v.final)
@@ -216,9 +223,8 @@ export function CompositionPage({
             Hide “{comp.name}”? Its frames, runs, finals and files remain
             stored.
           </p>
-          <button
-            className="danger"
-            disabled={busy}
+          <ActionButton
+            className="destructive"
             onClick={() =>
               act(async () => {
                 await api(`/compositions/${comp.id}`, "DELETE");
@@ -227,17 +233,24 @@ export function CompositionPage({
             }
           >
             Yes, delete composition
-          </button>
-          <button onClick={() => setConfirming(false)}>Cancel</button>
+          </ActionButton>
+          <ActionButton className="plain" onClick={() => setConfirming(false)}>
+            Cancel
+          </ActionButton>
         </div>
       )}
       {comp.kind === "storyboard" && (
         <Storyboard
-          {...{ comp, setComp, act, busy }}
+          {...{ comp, setComp, act }}
           selected={variant.id}
           tab={tab}
           navigate={navigate}
         />
+      )}
+      {previewError && (
+        <p className="error" role="alert">
+          {previewError}
+        </p>
       )}
       <nav className="composition-tabs" aria-label="Composition tabs">
         {["setup", "generate", "history"].map((t) => (
@@ -266,7 +279,6 @@ export function CompositionPage({
             setInstructions,
             act,
             saveText,
-            busy,
             available,
             assetId,
             setAssetId,
@@ -287,7 +299,7 @@ export function CompositionPage({
                 setDraft={setDraft}
                 current={preview?.references ?? []}
               />
-              <button
+              <ActionButton
                 type="button"
                 onClick={() => {
                   setDraft(null);
@@ -295,11 +307,12 @@ export function CompositionPage({
                 }}
               >
                 Back to the current pack
-              </button>
+              </ActionButton>
             </>
           )}
           <div className="panel">
-            <form
+            <ActionForm
+              success="Run queued."
               onSubmit={(e) => {
                 e.preventDefault();
                 act(async () => {
@@ -326,29 +339,26 @@ export function CompositionPage({
                   setChoices,
                   format,
                   setFormat,
-                  busy,
                   revision,
                 }}
                 content={draft !== null ? draftContent : preview?.prompt}
                 references={references}
                 onPreview={setRendered}
               />
-              <button
+              <ActionButton
+                className="primary"
                 disabled={
-                  busy ||
-                  invalidModels ||
-                  (draft === null && !preview) ||
-                  !rendered
+                  invalidModels || (draft === null && !preview) || !rendered
                 }
               >
                 Generate
-              </button>
-            </form>
+              </ActionButton>
+            </ActionForm>
           </div>
           {queuedRun && (
             <Runs
               variantId={variant.id}
-              {...{ act, busy, revision }}
+              {...{ act, revision }}
               runId={queuedRun}
               reuse={() => {}}
             />
@@ -360,7 +370,7 @@ export function CompositionPage({
           <h3>{frameName} results</h3>
           <Runs
             variantId={variant.id}
-            {...{ act, busy, revision }}
+            {...{ act, revision }}
             refresh={() =>
               act(
                 async () => setComp(await api(`/compositions/${comp.id}`)),

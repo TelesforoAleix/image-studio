@@ -1,7 +1,8 @@
+import { ActionButton, ActionForm, ActionSelect } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { AssetFields, blankAsset, assetTypes } from "./AssetFields";
-export function Library({ projects, act, revision, busy, projectFilter = "" }) {
+export function Library({ projects, act, revision, projectFilter = "" }) {
   const [assets, setAssets] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [tag, setTag] = useState("");
@@ -30,25 +31,31 @@ export function Library({ projects, act, revision, busy, projectFilter = "" }) {
     <section aria-labelledby="library-title">
       <div className="library-header">
         <h2 id="library-title">Assets</h2>
-        <button onClick={() => setCreating(!creating)}>
+        <ActionButton
+          className={creating ? "secondary" : "primary"}
+          onClick={() => setCreating(!creating)}
+        >
           {creating ? "Close form" : "New asset"}
-        </button>
+        </ActionButton>
       </div>
       <div className="filters">
         <label>
           Type
-          <select value={tag} onChange={(e) => setTag(e.target.value)}>
+          <ActionSelect value={tag} onChange={(e) => setTag(e.target.value)}>
             <option value="">All types</option>
             {Object.entries(assetTypes).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
         <label>
           Project view
-          <select value={project} onChange={(e) => setProject(e.target.value)}>
+          <ActionSelect
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+          >
             <option value="">All assets</option>
 
             {projects.map((p) => (
@@ -56,11 +63,11 @@ export function Library({ projects, act, revision, busy, projectFilter = "" }) {
                 Used by {p.name}
               </option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
       </div>
       {creating && (
-        <form
+        <ActionForm
           className="panel"
           onSubmit={(e) => {
             e.preventDefault();
@@ -72,8 +79,8 @@ export function Library({ projects, act, revision, busy, projectFilter = "" }) {
         >
           <h3>Create asset</h3>
           <AssetFields value={draft} onChange={setDraft} projects={projects} />
-          <button disabled={busy}>Create asset</button>
-        </form>
+          <ActionButton className="primary">Create asset</ActionButton>
+        </ActionForm>
       )}
       {!loaded ? (
         <p role="status">Loading assets…</p>

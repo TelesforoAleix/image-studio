@@ -1,14 +1,15 @@
+import { ActionGroup, ActionButton, ActionInput } from "./Actions";
 import React, { useState } from "react";
 import { api } from "./api";
 
-export function Selection({ selection, save, remove, busy }) {
+export function Selection({ selection, save, remove }) {
   const [role, setRole] = useState(selection.role);
   return (
-    <div className="panel">
+    <ActionGroup className="panel">
       <h3>{selection.asset.name}</h3>
       <label>
         Role
-        <input
+        <ActionInput
           value={role}
           onChange={(e) => setRole(e.target.value)}
           onBlur={() => {
@@ -26,9 +27,8 @@ export function Selection({ selection, save, remove, busy }) {
             <label key={i.id}>
               <img src={`/api/files/${i.hash}`} alt={selection.asset.name} />
               <span>
-                <input
+                <ActionInput
                   type="checkbox"
-                  disabled={busy}
                   checked={
                     i.approved
                       ? !selection.deselected_images.includes(i.id)
@@ -60,22 +60,14 @@ export function Selection({ selection, save, remove, busy }) {
             </label>
           ))}
       </div>
-      <button type="button" disabled={busy} onClick={remove}>
+      <ActionButton className="plain" type="button" onClick={remove}>
         Remove asset
-      </button>
-    </div>
+      </ActionButton>
+    </ActionGroup>
   );
 }
 
-export function Storyboard({
-  comp,
-  setComp,
-  act,
-  busy,
-  selected,
-  tab,
-  navigate,
-}) {
+export function Storyboard({ comp, setComp, act, selected, tab, navigate }) {
   const [confirming, setConfirming] = useState(null);
   const move = (index, delta) =>
     act(async () => {
@@ -86,7 +78,7 @@ export function Storyboard({
       );
     });
   return (
-    <div className="panel">
+    <ActionGroup className="panel">
       <div className="frame-strip">
         {comp.variants.map((v, index) => (
           <article className="frame-card" key={v.id}>
@@ -107,31 +99,32 @@ export function Storyboard({
               </strong>
             </a>
             <div className="actions">
-              <button
-                disabled={busy || index === 0}
+              <ActionButton
+                className="plain"
+                disabled={index === 0}
                 onClick={() => move(index, -1)}
               >
                 Move up
-              </button>
-              <button
-                disabled={busy || index === comp.variants.length - 1}
+              </ActionButton>
+              <ActionButton
+                className="plain"
+                disabled={index === comp.variants.length - 1}
                 onClick={() => move(index, 1)}
               >
                 Move down
-              </button>
-              <button
-                className="danger"
-                disabled={busy || comp.variants.length === 1}
+              </ActionButton>
+              <ActionButton
+                className="destructive"
+                disabled={comp.variants.length === 1}
                 onClick={() => setConfirming(v.id)}
               >
                 Delete frame…
-              </button>
+              </ActionButton>
             </div>
           </article>
         ))}
       </div>
-      <button
-        disabled={busy}
+      <ActionButton
         onClick={() =>
           act(async () => {
             const frame = await api(
@@ -145,15 +138,14 @@ export function Storyboard({
         }
       >
         Add frame
-      </button>
+      </ActionButton>
       {confirming && (
         <div className="delete-confirm">
           <p>
             Hide this frame with its runs and final? All files remain stored.
           </p>
-          <button
-            className="danger"
-            disabled={busy}
+          <ActionButton
+            className="destructive"
             onClick={() =>
               act(async () => {
                 await api(`/variants/${confirming}`, "DELETE");
@@ -165,10 +157,12 @@ export function Storyboard({
             }
           >
             Yes, delete frame
-          </button>
-          <button onClick={() => setConfirming(null)}>Cancel</button>
+          </ActionButton>
+          <ActionButton className="plain" onClick={() => setConfirming(null)}>
+            Cancel
+          </ActionButton>
         </div>
       )}
-    </div>
+    </ActionGroup>
   );
 }

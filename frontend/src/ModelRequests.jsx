@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionInput,
+  ActionSelect,
+  ActionTextarea,
+} from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { ModelCost } from "./ModelCost";
@@ -43,7 +49,6 @@ export function ModelRequests({
   setFormat,
   content,
   references,
-  busy,
   onPreview,
   revision,
   limit = 3,
@@ -104,9 +109,8 @@ export function ModelRequests({
     <>
       <label>
         Format
-        <select
+        <ActionSelect
           value={format}
-          disabled={busy}
           onChange={(e) => {
             setFormat(e.target.value);
             setChoices(
@@ -134,9 +138,9 @@ export function ModelRequests({
           {ratios.map((r) => (
             <option key={r}>{r}</option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
-      <fieldset disabled={busy}>
+      <fieldset>
         <legend>
           {limit === 1 ? "Choose a model" : "Compare one to three models"}
         </legend>
@@ -147,7 +151,7 @@ export function ModelRequests({
             <div className="model-option" key={m.model_name}>
               <label>
                 <span>
-                  <input
+                  <ActionInput
                     type="checkbox"
                     checked={!!c}
                     disabled={!c && (!supports || choices.length >= limit)}
@@ -182,14 +186,15 @@ export function ModelRequests({
           .map((c) => (
             <p className="error" key={c.model}>
               {c.model} is no longer available.{" "}
-              <button
+              <ActionButton
+                className="plain"
                 type="button"
                 onClick={() =>
                   setChoices(choices.filter((x) => x.model !== c.model))
                 }
               >
                 Remove model
-              </button>
+              </ActionButton>
             </p>
           ))}
       </fieldset>
@@ -210,7 +215,7 @@ export function ModelRequests({
               <h3>{info.display_name}</h3>
               <label>
                 Outputs
-                <select
+                <ActionSelect
                   value={c.count}
                   onChange={(e) =>
                     change(c.model, { count: Number(e.target.value) })
@@ -219,7 +224,7 @@ export function ModelRequests({
                   {[1, 2, 3, 4].map((n) => (
                     <option key={n}>{n}</option>
                   ))}
-                </select>
+                </ActionSelect>
               </label>
               <label>
                 {info.resolutions
@@ -227,7 +232,7 @@ export function ModelRequests({
                   : info.sizes
                     ? "Size / resolution"
                     : "Quality"}
-                <select
+                <ActionSelect
                   value={settings.quality}
                   onChange={(e) =>
                     change(c.model, {
@@ -240,7 +245,7 @@ export function ModelRequests({
                       {v} · ${p}
                     </option>
                   ))}
-                </select>
+                </ActionSelect>
               </label>
               <p>
                 ${price} per image
@@ -254,7 +259,7 @@ export function ModelRequests({
                   <label key={s.name}>
                     {s.name}
                     {s.values ? (
-                      <select
+                      <ActionSelect
                         value={settings.advanced[s.name]}
                         onChange={(e) =>
                           change(c.model, {
@@ -271,9 +276,9 @@ export function ModelRequests({
                         {s.values.map((v) => (
                           <option key={v}>{v}</option>
                         ))}
-                      </select>
+                      </ActionSelect>
                     ) : (
-                      <input
+                      <ActionInput
                         type="number"
                         min={s.range[0]}
                         max={s.range[1]}
@@ -297,7 +302,7 @@ export function ModelRequests({
               </details>
               <h4>Prompt to send</h4>
               {c.prompt !== undefined ? (
-                <textarea
+                <ActionTextarea
                   aria-label={`Prompt for ${info.display_name}`}
                   rows="12"
                   value={c.prompt}
@@ -307,7 +312,8 @@ export function ModelRequests({
                 <pre>{panel?.rendered_prompt || "Preparing preview…"}</pre>
               )}
               <div className="actions">
-                <button
+                <ActionButton
+                  className="plain"
                   type="button"
                   disabled={!panel}
                   onClick={() =>
@@ -315,8 +321,9 @@ export function ModelRequests({
                   }
                 >
                   Edit
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
+                  className="plain"
                   type="button"
                   onClick={() =>
                     setChoices(
@@ -329,7 +336,7 @@ export function ModelRequests({
                   }
                 >
                   Reset
-                </button>
+                </ActionButton>
               </div>
               <div className="reference-toggles">
                 {panel?.references.map((r, i) => (

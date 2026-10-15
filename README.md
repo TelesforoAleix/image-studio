@@ -26,6 +26,8 @@ uv run python scripts/check_no_data.py
 cd frontend
 npm ci
 npm run build
+npx playwright install chromium
+npm run check
 ```
 
 Database integration tests use real Postgres. Set `TEST_DATABASE_URL` to a disposable
@@ -717,3 +719,35 @@ restores R3 on downgrade; fresh databases migrate twice in Postgres tests.
 changes and clearing, subject/style ratings and a note, refusal of an unreferenced
 asset, per-model tallies and version 4 packages with unchanged records/storage.
 Earlier placeholder journeys and dump restore run alongside it.
+
+
+## Interface foundations
+
+`frontend/src/style.css` defines the shared tokens on `:root`: canvas, panel and
+raised surfaces, text/secondary text, border, olive accent/on-accent, semantic
+success/warning/danger, focus and neutral image backgrounds. System light/dark
+preferences choose the palette. Text uses the system font and a 12/14/15/17/22/28
+px rem scale; spacing follows 4/8/12/16/24/32/48 px with three radius tokens.
+Both themes prove text contrast of at least 4.5:1 and borders/focus at least 3:1.
+
+Buttons default to bordered secondary. Each view has one filled `primary`:
+New/Create asset, Upload selected images, New/Create composition, Create project,
+Create composition on a project, Save instructions in Setup, Generate in Generate,
+Duplicate in History, Provide/Save feedback on an output, and Refresh in Storage.
+`plain` covers in-place Edit, Reset and reorder actions. `destructive` uses danger
+text; deletion retains its existing inline confirmation.
+
+`Actions.jsx` scopes asynchronous feedback to the initiating control or form.
+Only that control and its conflicting form or record controls disable; errors stay
+beside it. Confirmations announce through status regions and disappear after four
+seconds. The top banner handles page-load failures. Polling and previews never
+set a busy state. Frame runs and asset generation history poll every three seconds
+only while waiting/running, restarting after queueing or retry. Running generations
+show elapsed seconds and an approximate remaining time from the saved model profile;
+missing timing metadata leaves elapsed time alone. Waiting names the image service.
+
+`npm run check` runs Chromium against synthetic intercepted API responses without a
+backend or model calls. It proves route/form primary counts in both themes, token
+contrast, controls during an in-flight poll, polling stop/restart, local action
+pending/errors and announced confirmation expiry. Playwright is an Apache-2.0 dev
+dependency; no screenshots, traces, image fixtures or owner records are retained.

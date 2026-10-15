@@ -1,3 +1,10 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionInput,
+  ActionSelect,
+  ActionTextarea,
+} from "./Actions";
 import React from "react";
 import { api } from "./api";
 import { StylePicker } from "./StylePicker";
@@ -17,7 +24,6 @@ export function CompositionSetup({
   setInstructions,
   act,
   saveText,
-  busy,
   available,
   assetId,
   setAssetId,
@@ -60,7 +66,7 @@ export function CompositionSetup({
         <StylePicker
           value={comp.style_asset_id}
           inherit
-          {...{ act, busy }}
+          {...{ act }}
           onChange={(style_asset_id) =>
             act(async () =>
               setComp(
@@ -82,9 +88,8 @@ export function CompositionSetup({
                   <label key={i.id}>
                     <img src={`/api/files/${i.hash}`} alt={comp.style.name} />
                     <span>
-                      <input
+                      <ActionInput
                         type="checkbox"
-                        disabled={busy}
                         checked={!comp.style_deselected_images.includes(i.id)}
                         onChange={(e) =>
                           act(async () =>
@@ -108,7 +113,7 @@ export function CompositionSetup({
           </>
         )}
       </div>
-      <form
+      <ActionForm
         className="panel"
         onSubmit={(e) => {
           e.preventDefault();
@@ -118,7 +123,7 @@ export function CompositionSetup({
         <>
           <label>
             Composition name
-            <input
+            <ActionInput
               required
               value={compName}
               onChange={(e) => setCompName(e.target.value)}
@@ -126,7 +131,7 @@ export function CompositionSetup({
           </label>
           <label>
             Composition creative direction
-            <textarea
+            <ActionTextarea
               rows="4"
               value={direction}
               onChange={(e) => setDirection(e.target.value)}
@@ -134,7 +139,7 @@ export function CompositionSetup({
           </label>
           <label>
             Scene
-            <textarea
+            <ActionTextarea
               rows="5"
               value={scene}
               onChange={(e) => setScene(e.target.value)}
@@ -145,7 +150,7 @@ export function CompositionSetup({
           <>
             <label>
               Frame name
-              <input
+              <ActionInput
                 required
                 value={frameName}
                 onChange={(e) => setFrameName(e.target.value)}
@@ -153,7 +158,7 @@ export function CompositionSetup({
             </label>
             <label>
               Frame instructions
-              <textarea
+              <ActionTextarea
                 rows="3"
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
@@ -161,12 +166,12 @@ export function CompositionSetup({
             </label>
           </>
         }
-        <button disabled={busy}>Save instructions</button>
-      </form>
+        <ActionButton className="primary">Save instructions</ActionButton>
+      </ActionForm>
       {
         <>
           <h3>Shared asset pack · all frames</h3>
-          <form
+          <ActionForm
             className="panel"
             onSubmit={(e) => {
               e.preventDefault();
@@ -188,7 +193,7 @@ export function CompositionSetup({
             <h3>Add an asset</h3>
             <label>
               Assets
-              <select
+              <ActionSelect
                 required
                 value={assetId}
                 onChange={(e) => setAssetId(e.target.value)}
@@ -199,25 +204,24 @@ export function CompositionSetup({
                     {a.name}
                   </option>
                 ))}
-              </select>
+              </ActionSelect>
             </label>
             <label>
               Role
-              <input
+              <ActionInput
                 required
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
                 placeholder="For example, the background"
               />
             </label>
-            <button disabled={busy || !assetId}>Add asset</button>
-          </form>
+            <ActionButton disabled={!assetId}>Add asset</ActionButton>
+          </ActionForm>
           {comp.assets.map((s) => (
             <Selection
               key={s.id}
               selection={s}
               save={saveSelection}
-              busy={busy}
               remove={() =>
                 act(async () =>
                   setComp(
@@ -242,9 +246,8 @@ export function CompositionSetup({
                 <label key={i.id}>
                   <img src={`/api/files/${i.hash}`} alt={i.asset.name} />
                   <span>
-                    <input
+                    <ActionInput
                       type="checkbox"
-                      disabled={busy}
                       checked={
                         (i.defaultOn ||
                           variant.selected_originals.includes(i.id)) &&
