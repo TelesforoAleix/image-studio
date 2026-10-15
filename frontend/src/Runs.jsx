@@ -1,3 +1,4 @@
+import { useViewerSource, ComparePick, outputHref } from "./OutputViewer";
 import { usePolling } from "./usePolling";
 import { hasActive, GenerationProgress } from "./Progress";
 import { ActionButton, ActionInput, ActionSelect } from "./Actions";
@@ -244,6 +245,7 @@ export function Runs({
         ),
       })),
     );
+  useViewerSource({ runs, final, choose, saveFeedback }, [runs, final]);
   const tallies = {};
   runs.forEach((r) =>
     r.generations.forEach((g) => {
@@ -280,7 +282,7 @@ export function Runs({
       {!workspace && !runId && final && (
         <div className="panel final-image">
           <h3>Final image</h3>
-          <a href={`#output/${final.generation_id}/${final.output}`}>
+          <a data-output href={outputHref(final.generation_id, final.output)}>
             <img src={`/api/files/${final.hash}`} alt="Selected final image" />
           </a>
           {finalGeneration && (
@@ -426,12 +428,13 @@ export function Runs({
                           )}
                           {g.outputs.map((hash, output) => (
                             <figure key={`${g.id}-${output}`}>
-                              <a href={`#output/${g.id}/${output}`}>
+                              <a data-output href={outputHref(g.id, output)}>
                                 <img
                                   src={`/api/files/${hash}`}
                                   alt={`${g.model_info.display_name}, output ${output + 1}`}
                                 />
                               </a>
+                              <ComparePick generation={g} output={output} />
                               <Feedback
                                 generation={g}
                                 {...{ output, act }}

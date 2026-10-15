@@ -112,7 +112,7 @@ overrides. Reference totals name each model's total or slot limit when exceeded.
 The centre shows one selected run with model columns, progress, retry, finals and
 quick/detailed feedback. The earlier-runs strip changes the shown run without
 navigation. Technical details holds prompts as sent, settings, request fields and
-the complete snapshot. Outputs still link to their existing output pages.
+the complete snapshot. Clicking an output opens the output viewer over the workspace.
 
 The docked generate bar holds up to three model chips with outputs, priced quality
 and Advanced controls, common format, estimated costs/spend and Generate (also
@@ -707,7 +707,7 @@ Earlier journeys and the dump restore continue in the compose job.
 
 ## Feedback on every output
 
-Workspace results and large output pages offer **Good** and **Not good** under
+Workspace results and the output viewer offer **Good** and **Not good** under
 each output.
 Click once to set a verdict; click the selected button again to clear it. Feedback
 belongs to the generation and its output index, independently of **Final**.
@@ -725,8 +725,30 @@ reference snapshot can be rated, even after library edits or deletion. Responses
 include `updated_at`. Generation and History reads include `feedback`, aligned
 with `outputs`; untouched outputs have null verdict/time, empty ratings and note.
 `GET /api/variants/<id>/feedback-tally` returns `{model: {rated, good}}`.
-Large output pages are `#output/<generation-id>/<output-index>`; generated asset
-image lineage includes its output index to link to the same page.
+Click an output in results, reference-view history or generated asset references to
+open the desktop output viewer over the current page. The page keeps its scroll,
+selected run and edits. Links use `?output=<generation-id>.<output-index>` in the
+hash route; old `#output/<generation-id>/<output-index>` links open the viewer over
+their composition frame or asset. Browser Back closes the viewer.
+
+| Key | Viewer action (also available as a visible button) |
+| --- | --- |
+| ← / → | Previous / next output in the run, across models in results order |
+| ↑ / ↓ | Previous (older) / next (newer) run of the same frame |
+| G / N | Good / Not good; press the selected verdict again to clear |
+| F | Mark the focused done composition output final |
+| Enter | Open detailed feedback inline |
+| C | Compare two or three outputs; click or Tab to focus an image |
+| Esc | Cancel open feedback first, then leave compare, then close the viewer |
+
+Compare uses the current output and others from its run by default. Tick Compare
+checkboxes in results to choose up to three outputs, including across earlier
+runs. The current image is always included. G, N and F act on the focused image.
+Typing in feedback fields keeps ordinary typing keys. Asset outputs offer feedback
+without Final. The footer shows model, run time, format, quality, estimated cost,
+verdict and final; Technical details retains the prompt as sent, request fields and
+snapshot. Focus stays inside the viewer and returns to the clicked output on close.
+The neutral image background follows the shared tokens; reduced motion is respected.
 
 Alembic 0009 adds only `output_feedback`, keyed by generation and output index.
 Clearing feedback retains its row; no records or stored files are deleted or
@@ -756,7 +778,7 @@ Both themes prove text contrast of at least 4.5:1 and borders/focus at least 3:1
 Buttons default to bordered secondary. Each view has one filled `primary`:
 New/Create asset, Upload selected images, New/Create composition, Create project,
 Create composition on a project, Generate in the composition workspace,
-Provide/Save feedback on an output, and Refresh in Storage.
+Provide/Save feedback in the output viewer, and Refresh in Storage.
 `plain` covers in-place Edit, Reset and reorder actions. `destructive` uses danger
 text; deletion retains its existing inline confirmation.
 

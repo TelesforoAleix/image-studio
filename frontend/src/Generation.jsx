@@ -1,3 +1,4 @@
+import { useViewerSource, ComparePick, outputHref } from "./OutputViewer";
 import { usePolling } from "./usePolling";
 import { hasActive, GenerationProgress } from "./Progress";
 import { ActionButton, ActionForm, ActionSelect } from "./Actions";
@@ -91,6 +92,26 @@ export function History({ path, act, revision, refresh }) {
     path,
     revision,
   );
+  const saveFeedback = (id, output, feedback) =>
+    setItems((old) =>
+      old.map((g) =>
+        g.id === id
+          ? {
+              ...g,
+              feedback: g.outputs.map((_, i) =>
+                i === output ? feedback : g.feedback?.[i],
+              ),
+            }
+          : g,
+      ),
+    );
+  const groups = new Map();
+  items.forEach((g) => {
+    const key = g.run_id || g.id;
+    if (!groups.has(key)) groups.set(key, { generations: [] });
+    groups.get(key).generations.push(g);
+  });
+  useViewerSource({ runs: [...groups.values()], saveFeedback }, [items]);
   return (
     <div className="image-grid">
       {pollError && (
@@ -111,9 +132,10 @@ export function History({ path, act, revision, refresh }) {
             {g.error && <p>{g.error}</p>}
             {g.outputs.map((hash, i) => (
               <div key={`${g.id}-${i}`}>
-                <a href={`#output/${g.id}/${i}`}>
+                <a data-output href={outputHref(g.id, i)}>
                   <img src={`/api/files/${hash}`} alt={`Output ${i + 1}`} />
                 </a>
+                <ComparePick generation={g} output={i} />
                 <Feedback
                   generation={g}
                   output={i}

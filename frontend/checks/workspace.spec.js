@@ -87,6 +87,9 @@ async function workspace(page, { empty = false, references = [] } = {}) {
     holdSave: null,
     failSave: false,
     events: [],
+    feedbackRequests: [],
+    assetGenerations: [],
+    holdRuns: null,
   };
   const asset = {
     id: 10,
@@ -102,6 +105,7 @@ async function workspace(page, { empty = false, references = [] } = {}) {
     references: [],
     originals: [],
   };
+  state.asset = asset;
   await page.route("**/api/**", async (route) => {
     const req = route.request(),
       path = new URL(req.url()).pathname.slice(4),
@@ -152,7 +156,11 @@ async function workspace(page, { empty = false, references = [] } = {}) {
       );
       if (method === "PATCH") Object.assign(frame, req.postDataJSON());
       value = { ...frame, composition_id: 1 };
-    } else if (path.endsWith("/preview"))
+    } else if (path === "/assets/10/generations")
+      value = state.assetGenerations;
+    else if (path === "/assets/10/reference-preview")
+      value = { prompt: "Synthetic reference", references: [] };
+    else if (path.endsWith("/preview"))
       value = {
         prompt: req.postDataJSON().scene,
         references: state.references,
@@ -191,7 +199,10 @@ async function workspace(page, { empty = false, references = [] } = {}) {
         };
         state.runs.unshift(run);
         value = run;
-      } else value = path === "/variants/1/runs" ? state.runs : state.others;
+      } else {
+        if (state.holdRuns) await state.holdRuns;
+        value = path === "/variants/1/runs" ? state.runs : state.others;
+      }
     } else if (/^\/variants\/\d+\/final$/.test(path)) {
       const frame = state.comp.variants.find(
         (f) => f.id === Number(path.split("/")[2]),
@@ -205,13 +216,32 @@ async function workspace(page, { empty = false, references = [] } = {}) {
       }
       if (method === "DELETE") frame.final = null;
       value = frame.final;
-    } else if (path.includes("/feedback"))
+    } else if (path.includes("/feedback")) {
+      const [, id, output] = /generations\/(\d+)\/outputs\/(\d+)/.exec(path);
+      const g = [
+        ...state.runs.flatMap((r) => r.generations),
+        ...state.assetGenerations,
+      ].find((g) => g.id === Number(id));
+      const body = req.postDataJSON();
+      state.feedbackRequests.push({
+        id: Number(id),
+        output: Number(output),
+        body,
+      });
       value = {
-        ...feedback(),
-        ...req.postDataJSON(),
+        ...g.feedback[output],
+        ...body,
         updated_at: new Date().toISOString(),
       };
-    else if (path.startsWith("/files/"))
+      g.feedback[output] = value;
+    } else if (/^\/generations\/\d+$/.test(path)) {
+      const id = Number(path.split("/")[2]);
+      value = [
+        ...state.runs.flatMap((r) => r.generations),
+        ...state.assetGenerations,
+      ].find((g) => g.id === id);
+      value = { variant_id: 1, ...value };
+    } else if (path.startsWith("/files/"))
       return route.fulfill({
         contentType: "image/svg+xml",
         body: `<svg xmlns="http://www.w3.org/2000/svg" width="${40 + path.length}" height="40"><rect width="100%" height="100%" fill="olive"/></svg>`,
@@ -604,4 +634,378 @@ test("empty single has no frame overrides, keyboard generation flushes, and brow
   release();
   await expect.poll(() => state.comp.scene).toBe("Synthetic navigation scene");
   await expect(page).toHaveURL(/#composition\/1\/frame\/1$/);
+});
+
+function viewerRun(state) {
+  const g = state.runs[0].generations[0];
+  g.outputs.push("synthetic-second");
+  g.feedback.push({ verdict: null, asset_ratings: [], note: "" });
+  state.runs[0].generations.push({
+    ...structuredClone(g),
+    id: 3,
+    model: "beta",
+    model_info: { ...g.model_info, display_name: "Beta" },
+    outputs: ["synthetic-beta"],
+    feedback: [{ verdict: null, asset_ratings: [], note: "" }],
+  });
+}
+const viewer = (page) => page.getByRole("dialog", { name: "Output viewer" });
+
+test("viewer keyboard crosses models and runs, traps focus and retains the workspace place", async ({
+  page,
+}) => {
+  const state = await workspace(page);
+  viewerRun(state);
+  await open(page);
+  await page
+    .getByRole("textbox", { name: "Scene", exact: true })
+    .fill("Synthetic retained draft");
+  await page.getByRole("button", { name: "Add asset", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Search assets" })
+    .fill("retained search");
+  const link = page.locator(".workspace-results a[data-output]").first();
+  await link.focus();
+  const scroll = await page.evaluate(() => ({
+    window: scrollY,
+    results: document.querySelector(".workspace-results").scrollTop,
+  }));
+  await link.click();
+  await expect(viewer(page)).toBeVisible();
+  await expect(page).toHaveURL(/\?output=2\.0$/);
+  await expect(viewer(page).locator(".viewer-image img")).toHaveAttribute(
+    "src",
+    "/api/files/output-latest",
+  );
+  await expect
+    .poll(
+      async () =>
+        (await viewer(page).locator(".viewer-image img").boundingBox()).height,
+    )
+    .toBeGreaterThan(500);
+  await page.keyboard.press("ArrowRight");
+  await expect(page).toHaveURL(/output=2\.1$/);
+  await page.keyboard.press("ArrowRight");
+  await expect(page).toHaveURL(/output=3\.0$/);
+  await page.keyboard.press("ArrowLeft");
+  await expect(page).toHaveURL(/output=2\.1$/);
+  await page.keyboard.press("ArrowUp");
+  await expect(page).toHaveURL(/output=1\.0$/);
+  await page.keyboard.press("ArrowDown");
+  await expect(page).toHaveURL(/output=2\.0$/);
+  for (const name of [
+    "← Previous output",
+    "Next output →",
+    "↑ Previous run",
+    "↓ Next run",
+    "Good G",
+    "Not good N",
+    "Mark final F",
+    "Provide feedback Enter",
+    "Compare C",
+    "Close Esc",
+  ])
+    await expect(
+      viewer(page).getByRole("button", { name, exact: true }),
+    ).toBeVisible();
+  await viewer(page)
+    .getByRole("button", { name: "Close Esc", exact: true })
+    .focus();
+  for (let i = 0; i < 18; i++) {
+    await page.keyboard.press("Tab");
+    expect(
+      await page.evaluate(() =>
+        document.querySelector("dialog").contains(document.activeElement),
+      ),
+    ).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(viewer(page)).toHaveCount(0);
+  await expect(link).toBeFocused();
+  await expect(
+    page.getByRole("textbox", { name: "Scene", exact: true }),
+  ).toHaveValue("Synthetic retained draft");
+  await expect(
+    page.getByRole("textbox", { name: "Search assets" }),
+  ).toHaveValue("retained search");
+  expect(
+    await page.evaluate(() => ({
+      window: scrollY,
+      results: document.querySelector(".workspace-results").scrollTop,
+    })),
+  ).toEqual(scroll);
+  await expect(page.locator(".run-strip button").first()).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
+test("viewer G N F Enter update requests and results, forms take Escape first, polling stays usable", async ({
+  page,
+}) => {
+  const state = await workspace(page);
+  viewerRun(state);
+  state.runs[0].generations[0].references = [
+    { asset_id: 10, asset_name: "Synthetic subject", role: "subject" },
+  ];
+  state.runs[1].generations[0].state = "running";
+  await open(page);
+  await page.locator(".workspace-results a[data-output]").first().click();
+  await expect(viewer(page)).toBeVisible();
+  let release;
+  state.holdRuns = new Promise((resolve) => {
+    release = resolve;
+  });
+  await page.keyboard.press("g");
+  await expect(
+    viewer(page).getByRole("button", { name: "Good G", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("g");
+  await expect(
+    viewer(page).getByRole("button", { name: "Good G", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.press("n");
+  await expect(
+    viewer(page).getByRole("button", { name: "Not good N", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("f");
+  await expect(
+    viewer(page).getByRole("button", { name: "Final F", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(state.comp.variants[0].final).toMatchObject({
+    generation_id: 2,
+    output: 0,
+  });
+  await page.keyboard.press("Enter");
+  await viewer(page)
+    .getByRole("textbox", { name: "Note (optional)" })
+    .fill("gnf Synthetic note");
+  await page.keyboard.press("Escape");
+  await expect(
+    viewer(page).getByRole("textbox", { name: "Note (optional)" }),
+  ).toHaveCount(0);
+  await expect(viewer(page)).toBeVisible();
+  await page.keyboard.press("Enter");
+  await viewer(page)
+    .getByRole("textbox", { name: "Note (optional)" })
+    .fill("Synthetic detailed note");
+  await viewer(page)
+    .getByRole("combobox", { name: "Synthetic subject · subject" })
+    .selectOption("kept");
+  await page.keyboard.press("Control+Enter");
+  expect(state.posts).toHaveLength(0);
+  await viewer(page)
+    .getByRole("button", { name: "Save feedback", exact: true })
+    .click();
+  await expect(
+    viewer(page).getByRole("textbox", { name: "Note (optional)" }),
+  ).toHaveCount(0);
+  expect(state.feedbackRequests).toEqual([
+    { id: 2, output: 0, body: { verdict: "good" } },
+    { id: 2, output: 0, body: { verdict: null } },
+    { id: 2, output: 0, body: { verdict: "not_good" } },
+    {
+      id: 2,
+      output: 0,
+      body: {
+        verdict: "not_good",
+        asset_ratings: [{ asset_id: 10, rating: "kept" }],
+        note: "Synthetic detailed note",
+      },
+    },
+  ]);
+  await page.waitForTimeout(3200);
+  await expect(
+    viewer(page).getByRole("button", { name: "Good G", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    viewer(page).getByRole("button", { name: "Final F", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Not good", exact: true }).first(),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Final", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("img", { name: "Frame 1 final" })).toBeVisible();
+  state.holdRuns = null;
+  release();
+});
+
+test("compare fills three columns, focused final and custom picks across runs", async ({
+  page,
+}) => {
+  const state = await workspace(page);
+  viewerRun(state);
+  await open(page);
+  await page.locator(".workspace-results a[data-output]").first().click();
+  await expect(viewer(page)).toBeVisible();
+  await page.keyboard.press("c");
+  await expect(viewer(page).locator(".viewer-image")).toHaveCount(3);
+  const images = await viewer(page)
+    .locator(".viewer-image")
+    .evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().height));
+  expect(images[0]).toBeGreaterThan(500);
+  expect(new Set(images).size).toBe(1);
+  await viewer(page)
+    .getByRole("button", { name: "Focus Beta, output 1", exact: true })
+    .click();
+  await page.keyboard.press("g");
+  await expect(
+    viewer(page).getByRole("button", { name: "Good G", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("f");
+  await expect(
+    viewer(page).getByRole("button", { name: "Final F", exact: true }),
+  ).toBeVisible();
+  expect(state.comp.variants[0].final).toMatchObject({
+    generation_id: 3,
+    output: 0,
+  });
+  await page.keyboard.press("Escape");
+  await expect(viewer(page).locator(".viewer-image")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("checkbox", { name: "Compare Alpha, output 2", exact: true })
+    .check();
+  await page.locator(".run-strip button").last().click();
+  await page
+    .getByRole("checkbox", { name: "Compare Beta, output 1", exact: true })
+    .check();
+  await page.locator(".workspace-results a[data-output]").first().click();
+  await expect(viewer(page)).toBeVisible();
+  await page.keyboard.press("c");
+  await expect(viewer(page).locator(".viewer-image")).toHaveCount(2);
+  expect(
+    await viewer(page)
+      .locator(".viewer-image img")
+      .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("src"))),
+  ).toEqual(["/api/files/output-earlier", "/api/files/synthetic-second"]);
+});
+
+test("old output links resolve their frame; Back closes, Forward opens and direct suffix closes safely", async ({
+  page,
+}) => {
+  await workspace(page);
+  await page.goto("/#output/2/0");
+  await expect(viewer(page)).toBeVisible();
+  await expect(page).toHaveURL(/#composition\/1\/frame\/1\?output=2\.0$/);
+  await page.goBack();
+  await expect(viewer(page)).toHaveCount(0);
+  await expect(page).toHaveURL(/#composition\/1\/frame\/1$/);
+  await page.goForward();
+  await expect(viewer(page)).toBeVisible();
+  await page.goto("/#composition/1/frame/1?output=2.0");
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/#composition\/1\/frame\/1$/);
+});
+
+test("asset generated references and history use the viewer with feedback and no final", async ({
+  page,
+}) => {
+  const state = await workspace(page);
+  const g = {
+    ...structuredClone(state.runs[0].generations[0]),
+    id: 9,
+    variant_id: null,
+    asset_id: 10,
+    run_id: "asset-run",
+  };
+  state.assetGenerations = [g];
+  state.asset.images = [
+    {
+      id: 9,
+      hash: g.outputs[0],
+      approved: true,
+      source: "generated",
+      lineage: { generation_id: 9, output: 0, originals: [] },
+    },
+  ];
+  state.asset.references = state.asset.images;
+  await page.goto("/#asset/10");
+  const link = page.locator("a[data-output]").first();
+  await link.click();
+  await expect(viewer(page)).toBeVisible();
+  await expect(
+    viewer(page).getByRole("button", { name: /final/i }),
+  ).toHaveCount(0);
+  await page.keyboard.press("g");
+  await expect(
+    viewer(page).getByRole("button", { name: "Good G", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(link).toBeFocused();
+  await expect(
+    page
+      .locator(".image-info")
+      .getByRole("button", { name: "Good", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.locator(".image-info a[data-output]").click();
+  await expect(viewer(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.goto("/#output/9/0");
+  await expect(page).toHaveURL(/#asset\/10\?output=9\.0$/);
+  await expect(viewer(page)).toBeVisible();
+  await expect(
+    viewer(page).getByRole("button", { name: /final/i }),
+  ).toHaveCount(0);
+});
+
+test("retry outputs follow their model column; compare navigation keeps its focused image visible", async ({
+  page,
+}) => {
+  const state = await workspace(page);
+  viewerRun(state);
+  const original = state.runs[0].generations[0];
+  state.runs[0].generations.push({
+    ...structuredClone(original),
+    id: 4,
+    retry_of: 2,
+    outputs: ["synthetic-retry"],
+    feedback: [{ verdict: null, asset_ratings: [], note: "" }],
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(page);
+  await page.locator(".workspace-results a[data-output]").first().click();
+  await expect(viewer(page)).toBeVisible();
+  await viewer(page)
+    .getByRole("button", { name: "Compare C", exact: true })
+    .click();
+  await viewer(page)
+    .getByRole("button", { name: "Next output →", exact: true })
+    .click();
+  await expect(page).toHaveURL(/output=2\.1$/);
+  await viewer(page)
+    .getByRole("button", { name: "Next output →", exact: true })
+    .click();
+  await expect(page).toHaveURL(/output=4\.0$/);
+  await viewer(page)
+    .getByRole("button", { name: "Next output →", exact: true })
+    .click();
+  await expect(page).toHaveURL(/output=3\.0$/);
+  await expect(
+    viewer(page).getByRole("button", {
+      name: "Focus Beta, output 1",
+      exact: true,
+    }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(viewer(page).locator(".viewer-image")).toHaveCount(3);
+  await viewer(page).getByText("Technical details", { exact: true }).click();
+  await expect(
+    viewer(page).getByText("Prompt as sent", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    viewer(page).getByText("Request fields", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    viewer(page).getByText("Snapshot", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await viewer(page).evaluate(
+      (node) => getComputedStyle(node).transitionDuration,
+    ),
+  ).toBe("0s");
+  await page.keyboard.press("Escape");
+  await expect(viewer(page).locator(".viewer-image")).toHaveCount(1);
 });

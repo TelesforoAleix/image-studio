@@ -224,11 +224,22 @@ for (const theme of ["light", "dark"]) {
       "composition/1",
     ]) {
       await page.goto(`/#${route}`);
-      await expect(page.locator("button.primary")).toHaveCount(1);
+      if (route.startsWith("output/"))
+        await expect(
+          page.getByRole("dialog", { name: "Output viewer" }),
+        ).toBeVisible();
+      await expect(
+        page.getByRole("button").and(page.locator("button.primary")),
+      ).toHaveCount(1);
     }
     await page.goto("/#output/1/0");
-    await page.getByRole("button", { name: "Provide feedback" }).click();
-    await expect(page.locator("button.primary")).toHaveCount(1);
+    await page
+      .getByRole("dialog", { name: "Output viewer" })
+      .getByRole("button", { name: "Provide feedback Enter", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button").and(page.locator("button.primary")),
+    ).toHaveCount(1);
     for (const route of ["assets", "compositions"]) {
       await page.goto(`/#${route}`);
       await page
@@ -236,16 +247,22 @@ for (const theme of ["light", "dark"]) {
           name: route === "assets" ? "New asset" : "New composition",
         })
         .click();
-      await expect(page.locator("button.primary")).toHaveCount(1);
+      await expect(
+        page.getByRole("button").and(page.locator("button.primary")),
+      ).toHaveCount(1);
     }
     state.storyboard = true;
     for (const tab of ["setup", "generate", "history"]) {
       await page.goto(`/#composition/1/frame/1/${tab}`);
-      await expect(page.locator("button.primary")).toHaveCount(1);
+      await expect(
+        page.getByRole("button").and(page.locator("button.primary")),
+      ).toHaveCount(1);
     }
     state.references = true;
     await page.goto("/#output/1/0");
-    await expect(page.locator("button.primary")).toHaveCount(1);
+    await expect(
+      page.getByRole("button").and(page.locator("button.primary")),
+    ).toHaveCount(1);
     expect(errors).toEqual([]);
     console.log(
       `PRIMARY ${theme}: all routes, create forms and feedback form exactly one`,
@@ -312,7 +329,9 @@ test("queueing starts run polling and reference history also stops idle", async 
   await page.clock.install();
   await page.goto("/#composition/1/frame/1/generate");
   await page.getByText("+ model", { exact: true }).click();
-  await page.getByRole("checkbox", { name: "Synthetic model" }).check();
+  await page
+    .getByRole("checkbox", { name: "Synthetic model", exact: true })
+    .check();
   await page.getByText("+ model", { exact: true }).click();
   await page.clock.fastForward(300);
   await expect(
@@ -332,7 +351,9 @@ test("queueing starts run polling and reference history also stops idle", async 
   const idle = state.polls;
   await page.clock.fastForward(12000);
   expect(state.polls).toBe(idle);
-  await page.getByRole("checkbox", { name: "Synthetic model" }).check();
+  await page
+    .getByRole("checkbox", { name: "Synthetic model", exact: true })
+    .check();
   await page.clock.fastForward(300);
   await page
     .getByRole("button", { name: "Generate reference views", exact: true })

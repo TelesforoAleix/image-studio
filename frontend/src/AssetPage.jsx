@@ -1,3 +1,4 @@
+import { outputHref } from "./OutputViewer";
 import { ActionGroup, ActionButton, ActionForm, ActionInput } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
@@ -119,9 +120,13 @@ export function AssetPage({ id, projects, act, changed }) {
                     key={image.id}
                   >
                     <a
+                      data-output={image.lineage ? true : undefined}
                       href={
                         image.lineage
-                          ? `#output/${image.lineage.generation_id}/${image.lineage.output}`
+                          ? outputHref(
+                              image.lineage.generation_id,
+                              image.lineage.output,
+                            )
                           : `/api/files/${image.hash}`
                       }
                       target={image.lineage ? undefined : "_blank"}

@@ -44,7 +44,7 @@ jobs:
       - name: Install browser for frontend proofs
         run: npx playwright install --with-deps chromium
         working-directory: frontend
-      - name: Prove frontend workspace and foundations
+      - name: Prove frontend viewer, workspace and foundations
         run: npm run check
         working-directory: frontend
       - run: uv run ruff check .
