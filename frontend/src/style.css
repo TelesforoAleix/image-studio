@@ -366,6 +366,7 @@ figure {
   object-fit: contain;
 }
 input[type="checkbox"] {
+  accent-color: var(--accent);
   width: auto;
 }
 
