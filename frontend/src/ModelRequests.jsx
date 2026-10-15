@@ -52,8 +52,10 @@ export function ModelRequests({
   onPreview,
   revision,
   limit = 3,
+  workspace = false,
 }) {
   const [panels, setPanels] = useState([]);
+  const [sheet, setSheet] = useState(false);
   const [error, setError] = useState("");
   const [spend, setSpend] = useState(null);
   useEffect(() => {
@@ -105,11 +107,164 @@ export function ModelRequests({
     setChoices(
       choices.map((c) => (c.model === name ? { ...c, ...values } : c)),
     );
+  const settingsPanel = (c, info, settings, price) => (
+    <>
+      {" "}
+      <label>
+        Outputs
+        <ActionSelect
+          value={c.count}
+          onChange={(e) => change(c.model, { count: Number(e.target.value) })}
+        >
+          {[1, 2, 3, 4].map((n) => (
+            <option key={n}>{n}</option>
+          ))}
+        </ActionSelect>
+      </label>
+      <label>
+        {info.resolutions
+          ? "Resolution"
+          : info.sizes
+            ? "Size / resolution"
+            : "Quality"}
+        <ActionSelect
+          value={settings.quality}
+          onChange={(e) =>
+            change(c.model, {
+              settings: { ...settings, quality: e.target.value },
+            })
+          }
+        >
+          {Object.entries(prices(info, format)).map(([v, p]) => (
+            <option key={v} value={v}>
+              {v} · ${p}
+            </option>
+          ))}
+        </ActionSelect>
+      </label>
+      <p>
+        ${price} per image
+        {info.price_per_reference != null &&
+          ` + $${info.price_per_reference} per reference`}
+        {info.price_estimated && " (estimated)"}
+      </p>
+      <details>
+        <summary>Advanced</summary>
+        {(info.advanced || []).map((s) => (
+          <label key={s.name}>
+            {s.name}
+            {s.values ? (
+              <ActionSelect
+                value={settings.advanced?.[s.name]}
+                onChange={(e) =>
+                  change(c.model, {
+                    settings: {
+                      ...settings,
+                      advanced: {
+                        ...settings.advanced,
+                        [s.name]: e.target.value,
+                      },
+                    },
+                  })
+                }
+              >
+                {s.values.map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </ActionSelect>
+            ) : (
+              <ActionInput
+                type="number"
+                min={s.range[0]}
+                max={s.range[1]}
+                step="1"
+                value={settings.advanced?.[s.name]}
+                onChange={(e) =>
+                  change(c.model, {
+                    settings: {
+                      ...settings,
+                      advanced: {
+                        ...settings.advanced,
+                        [s.name]: Number(e.target.value),
+                      },
+                    },
+                  })
+                }
+              />
+            )}
+          </label>
+        ))}
+      </details>
+      {workspace && (
+        <ActionButton
+          type="button"
+          onClick={() => setChoices(choices.filter((x) => x.model !== c.model))}
+        >
+          Remove
+        </ActionButton>
+      )}
+    </>
+  );
+  const promptPanel = (c, info, panel) => (
+    <>
+      {" "}
+      <h4>Prompt to send</h4>
+      {c.prompt !== undefined ? (
+        <ActionTextarea
+          aria-label={`Prompt for ${info.display_name}`}
+          rows="12"
+          value={c.prompt}
+          onChange={(e) => change(c.model, { prompt: e.target.value })}
+        />
+      ) : (
+        <pre>{panel?.rendered_prompt || "Preparing preview…"}</pre>
+      )}
+      <div className="actions">
+        <ActionButton
+          className="plain"
+          type="button"
+          disabled={!panel}
+          onClick={() => change(c.model, { prompt: panel.rendered_prompt })}
+        >
+          Edit
+        </ActionButton>
+        <ActionButton
+          className="plain"
+          type="button"
+          onClick={() =>
+            setChoices(
+              choices.map((x) => {
+                if (x.model !== c.model) return x;
+                const { prompt, ...rest } = x;
+                return rest;
+              }),
+            )
+          }
+        >
+          Reset
+        </ActionButton>
+      </div>
+      <div className="reference-toggles">
+        {panel?.references.map((r, i) => (
+          <figure key={i}>
+            <img
+              src={`/api/files/${r.hash}`}
+              alt={`Image ${i + 1}: ${r.asset_name}`}
+            />
+            <figcaption>
+              Image {i + 1}: {r.asset_name} · {r.role}
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </>
+  );
   return (
     <>
       <label>
         Format
         <ActionSelect
+          aria-label="Format"
           value={format}
           onChange={(e) => {
             setFormat(e.target.value);
@@ -140,70 +295,90 @@ export function ModelRequests({
           ))}
         </ActionSelect>
       </label>
-      <fieldset>
-        <legend>
-          {limit === 1 ? "Choose a model" : "Compare one to three models"}
-        </legend>
-        {models.map((m) => {
-          const c = choices.find((c) => c.model === m.model_name);
-          const supports = formats(m.model_info).includes(format);
-          return (
-            <div className="model-option" key={m.model_name}>
-              <label>
-                <span>
-                  <ActionInput
-                    type="checkbox"
-                    checked={!!c}
-                    disabled={!c && (!supports || choices.length >= limit)}
-                    onChange={(e) =>
-                      setChoices(
-                        e.target.checked
-                          ? [
-                              ...choices,
-                              {
-                                model: m.model_name,
-                                count: 1,
-                                settings: defaults(m.model_info, format),
-                              },
-                            ]
-                          : choices.filter((x) => x.model !== m.model_name),
-                      )
-                    }
-                  />
-                  {m.model_info.display_name}
-                </span>
-              </label>
-              <ModelCost info={m.model_info} />
-              {!supports && <p>Does not support {format}</p>}
-              {m.model_info.placeholder && (
-                <span className="badge">Placeholder</span>
-              )}
-            </div>
-          );
-        })}
-        {choices
-          .filter((c) => !models.some((m) => m.model_name === c.model))
-          .map((c) => (
-            <p className="error" key={c.model}>
-              {c.model} is no longer available.{" "}
-              <ActionButton
-                className="plain"
-                type="button"
-                onClick={() =>
-                  setChoices(choices.filter((x) => x.model !== c.model))
-                }
-              >
-                Remove model
-              </ActionButton>
-            </p>
-          ))}
-      </fieldset>
+      <details
+        onKeyDown={(e) => {
+          if (workspace && e.key === "Escape") {
+            e.currentTarget.open = false;
+            e.currentTarget.querySelector("summary").focus();
+          }
+        }}
+        className={workspace ? "model-picker" : "model-picker-inline"}
+        open={workspace ? undefined : true}
+      >
+        <summary>{workspace ? "+ model" : "Models"}</summary>
+        <fieldset>
+          <legend>
+            {limit === 1 ? "Choose a model" : "Compare one to three models"}
+          </legend>
+          {models.map((m) => {
+            const c = choices.find((c) => c.model === m.model_name);
+            const supports = formats(m.model_info).includes(format);
+            return (
+              <div className="model-option" key={m.model_name}>
+                <label>
+                  <span>
+                    <ActionInput
+                      type="checkbox"
+                      checked={!!c}
+                      disabled={!c && (!supports || choices.length >= limit)}
+                      onChange={(e) =>
+                        setChoices(
+                          e.target.checked
+                            ? [
+                                ...choices,
+                                {
+                                  model: m.model_name,
+                                  count: 1,
+                                  settings: defaults(m.model_info, format),
+                                },
+                              ]
+                            : choices.filter((x) => x.model !== m.model_name),
+                        )
+                      }
+                    />
+                    {m.model_info.display_name}
+                  </span>
+                </label>
+                <ModelCost info={m.model_info} />
+                {workspace && (
+                  <p>
+                    Accepts {m.model_info.max_references} references ·{" "}
+                    {m.model_info.seconds_per_image == null
+                      ? "Time unknown"
+                      : `About ${m.model_info.seconds_per_image} seconds per image`}
+                  </p>
+                )}
+                {!supports && <p>Does not support {format}</p>}
+                {m.model_info.placeholder && (
+                  <span className="badge">Placeholder</span>
+                )}
+              </div>
+            );
+          })}
+          {choices
+            .filter((c) => !models.some((m) => m.model_name === c.model))
+            .map((c) => (
+              <p className="error" key={c.model}>
+                {c.model} is no longer available.{" "}
+                <ActionButton
+                  className="plain"
+                  type="button"
+                  onClick={() =>
+                    setChoices(choices.filter((x) => x.model !== c.model))
+                  }
+                >
+                  Remove model
+                </ActionButton>
+              </p>
+            ))}
+        </fieldset>
+      </details>
       {error && (
         <p role="alert" className="error">
           {error}
         </p>
       )}
-      <div className="request-panels">
+      <div className={workspace ? "model-chips" : "request-panels"}>
         {choices.map((c) => {
           const info = models.find((m) => m.model_name === c.model)?.model_info;
           if (!info) return null;
@@ -211,147 +386,40 @@ export function ModelRequests({
           const panel = panels.find((p) => p.model === c.model);
           const price = prices(info, format)[settings.quality];
           return (
-            <section className="panel model-column" key={c.model}>
-              <h3>{info.display_name}</h3>
-              <label>
-                Outputs
-                <ActionSelect
-                  value={c.count}
-                  onChange={(e) =>
-                    change(c.model, { count: Number(e.target.value) })
-                  }
+            <section
+              className={
+                workspace ? "model-chip-container" : "panel model-column"
+              }
+              key={c.model}
+            >
+              {!workspace && <h3>{info.display_name}</h3>}
+              {workspace ? (
+                <details
+                  className="model-chip"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.currentTarget.open = false;
+                      e.currentTarget.querySelector("summary").focus();
+                    }
+                  }}
                 >
-                  {[1, 2, 3, 4].map((n) => (
-                    <option key={n}>{n}</option>
-                  ))}
-                </ActionSelect>
-              </label>
-              <label>
-                {info.resolutions
-                  ? "Resolution"
-                  : info.sizes
-                    ? "Size / resolution"
-                    : "Quality"}
-                <ActionSelect
-                  value={settings.quality}
-                  onChange={(e) =>
-                    change(c.model, {
-                      settings: { ...settings, quality: e.target.value },
-                    })
-                  }
-                >
-                  {Object.entries(prices(info, format)).map(([v, p]) => (
-                    <option key={v} value={v}>
-                      {v} · ${p}
-                    </option>
-                  ))}
-                </ActionSelect>
-              </label>
-              <p>
-                ${price} per image
-                {info.price_per_reference != null &&
-                  ` + $${info.price_per_reference} per reference`}
-                {info.price_estimated && " (estimated)"}
-              </p>
-              <details>
-                <summary>Advanced</summary>
-                {(info.advanced || []).map((s) => (
-                  <label key={s.name}>
-                    {s.name}
-                    {s.values ? (
-                      <ActionSelect
-                        value={settings.advanced[s.name]}
-                        onChange={(e) =>
-                          change(c.model, {
-                            settings: {
-                              ...settings,
-                              advanced: {
-                                ...settings.advanced,
-                                [s.name]: e.target.value,
-                              },
-                            },
-                          })
-                        }
-                      >
-                        {s.values.map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </ActionSelect>
-                    ) : (
-                      <ActionInput
-                        type="number"
-                        min={s.range[0]}
-                        max={s.range[1]}
-                        step="1"
-                        value={settings.advanced[s.name]}
-                        onChange={(e) =>
-                          change(c.model, {
-                            settings: {
-                              ...settings,
-                              advanced: {
-                                ...settings.advanced,
-                                [s.name]: Number(e.target.value),
-                              },
-                            },
-                          })
-                        }
-                      />
+                  <summary>
+                    {info.display_name} · {c.count} outputs · {settings.quality}
+                    {c.prompt !== undefined && (
+                      <span className="badge">Edited prompt</span>
                     )}
-                  </label>
-                ))}
-              </details>
-              <h4>Prompt to send</h4>
-              {c.prompt !== undefined ? (
-                <ActionTextarea
-                  aria-label={`Prompt for ${info.display_name}`}
-                  rows="12"
-                  value={c.prompt}
-                  onChange={(e) => change(c.model, { prompt: e.target.value })}
-                />
+                  </summary>
+                  <div className="chip-popover">
+                    {settingsPanel(c, info, settings, price)}
+                  </div>
+                </details>
               ) : (
-                <pre>{panel?.rendered_prompt || "Preparing preview…"}</pre>
+                <>
+                  {settingsPanel(c, info, settings, price)}
+                  {promptPanel(c, info, panel)}
+                </>
               )}
-              <div className="actions">
-                <ActionButton
-                  className="plain"
-                  type="button"
-                  disabled={!panel}
-                  onClick={() =>
-                    change(c.model, { prompt: panel.rendered_prompt })
-                  }
-                >
-                  Edit
-                </ActionButton>
-                <ActionButton
-                  className="plain"
-                  type="button"
-                  onClick={() =>
-                    setChoices(
-                      choices.map((x) => {
-                        if (x.model !== c.model) return x;
-                        const { prompt, ...rest } = x;
-                        return rest;
-                      }),
-                    )
-                  }
-                >
-                  Reset
-                </ActionButton>
-              </div>
-              <div className="reference-toggles">
-                {panel?.references.map((r, i) => (
-                  <figure key={i}>
-                    <img
-                      src={`/api/files/${r.hash}`}
-                      alt={`Image ${i + 1}: ${r.asset_name}`}
-                    />
-                    <figcaption>
-                      Image {i + 1}: {r.asset_name} · {r.role}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-              {panel && (
+              {!workspace && panel && (
                 <p>
                   Model cost: ${panel.estimated_cost.toFixed(5)}
                   {info.price_estimated && " (estimated)"}
@@ -361,8 +429,57 @@ export function ModelRequests({
           );
         })}
       </div>
+      {workspace && (
+        <>
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => setSheet(true)}
+          >
+            View prompts ({choices.length})
+          </button>
+          {sheet && (
+            <div
+              className="prompt-sheet"
+              role="dialog"
+              aria-modal="false"
+              aria-label="View prompts"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setSheet(false);
+                  e.currentTarget.previousElementSibling?.focus();
+                }
+              }}
+            >
+              <div className="sheet-heading">
+                <h2>Prompts as sent</h2>
+                <button type="button" autoFocus onClick={() => setSheet(false)}>
+                  Close prompts
+                </button>
+              </div>
+              {choices.map((c) => {
+                const info = models.find(
+                  (m) => m.model_name === c.model,
+                )?.model_info;
+                return (
+                  info && (
+                    <section key={c.model}>
+                      <h3>{info.display_name}</h3>
+                      {promptPanel(
+                        c,
+                        info,
+                        panels.find((p) => p.model === c.model),
+                      )}
+                    </section>
+                  )
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
       <p>
-        Run cost:{" "}
+        Estimated run cost:{" "}
         {panels.length === choices.length && panels.length
           ? `$${panels.reduce((s, p) => s + p.estimated_cost, 0).toFixed(5)}${chosen.some((m) => m.model_info.price_estimated) ? " (estimated)" : ""}`
           : "Choose models and valid settings"}

@@ -671,3 +671,318 @@ img {
   border: 1px solid var(--border);
   background: var(--raised);
 }
+
+/* Desktop composition workspace. */
+main.workspace-main {
+  max-width: none;
+  padding: var(--space-6) var(--space-8) 0;
+}
+.workspace-main .studio-header {
+  padding-bottom: var(--space-4);
+}
+.composition-workspace {
+  margin-top: var(--space-4);
+  padding-bottom: 190px;
+}
+.workspace-toolbar,
+.sheet-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+}
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.workspace-columns {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+}
+.inspector {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+.inspector h3 {
+  margin-top: 0;
+}
+.inspector label {
+  margin: var(--space-3) 0;
+}
+.inspector label small {
+  font-weight: 400;
+  font-size: var(--text-xs);
+}
+.pack-row {
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) 0;
+  margin-bottom: var(--space-3);
+}
+.pack-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pack-heading img,
+.asset-pick img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.inspector .reference-toggles {
+  gap: var(--space-2);
+}
+.inspector .reference-toggles label {
+  width: 128px;
+}
+.inspector .reference-toggles img {
+  width: 100%;
+  height: 90px;
+}
+.asset-picker {
+  border: 1px solid var(--border);
+  padding: var(--space-3);
+  max-height: 350px;
+  overflow-y: auto;
+}
+.asset-pick {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  width: 100%;
+  margin-bottom: var(--space-2);
+  text-align: left;
+}
+.reference-total {
+  margin-top: var(--space-4);
+  font-weight: 600;
+}
+.workspace-results {
+  min-width: 0;
+}
+.workspace-results > article.panel {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+}
+.workspace-results .model-column img {
+  max-height: 60vh;
+  min-height: 180px;
+}
+.workspace-results .model-column {
+  border: 0;
+  padding: var(--space-2);
+}
+.workspace-results .run-columns {
+  margin-top: var(--space-3);
+}
+.workspace-results .model-column h3 {
+  margin: 0;
+}
+.workspace-results .feedback-tally {
+  margin-top: 0;
+}
+.workspace-results pre {
+  max-height: 500px;
+  overflow: auto;
+}
+.run-strip {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding: var(--space-2);
+}
+.run-strip > button {
+  flex: 0 0 200px;
+  display: grid;
+  gap: var(--space-2);
+  text-align: left;
+  font-size: var(--text-xs);
+}
+.run-strip > button[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  background: var(--raised);
+}
+.run-thumbnails {
+  display: flex;
+  gap: var(--space-1);
+  height: 72px;
+}
+.run-thumbnails img {
+  width: 55px;
+  height: 72px;
+  object-fit: contain;
+}
+.generate-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 12;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  padding: var(--space-3) var(--space-8);
+  box-shadow: 0 -4px 16px #0001;
+}
+.generate-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.generate-controls > label {
+  margin: 0;
+  width: 90px;
+}
+.generate-controls > p {
+  font-size: var(--text-xs);
+  max-width: 220px;
+}
+.generate-controls > .primary {
+  margin-left: auto;
+}
+.model-chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.model-chip-container {
+  margin: 0;
+}
+.model-chip > summary {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+}
+.model-chip,
+.model-picker,
+.workspace-menu {
+  position: relative;
+}
+.chip-popover,
+.model-picker > fieldset,
+.menu-panel {
+  position: absolute;
+  z-index: 25;
+  width: 300px;
+  padding: var(--space-4);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 28px #0003;
+}
+.chip-popover,
+.model-picker > fieldset {
+  bottom: calc(100% + 12px);
+  max-height: 65vh;
+  overflow-y: auto;
+}
+.model-picker > summary {
+  padding: var(--space-2);
+}
+.menu-panel {
+  right: 0;
+  top: calc(100% + 8px);
+  display: grid;
+  gap: var(--space-2);
+}
+.menu-panel [role="menuitem"] {
+  text-align: left;
+  padding: var(--space-2);
+}
+.menu-panel p {
+  font-size: var(--text-xs);
+}
+.model-picker-inline > summary {
+  display: none;
+}
+.prompt-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: min(560px, 55vw);
+  padding: var(--space-6);
+  overflow-y: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 40px #0003;
+}
+.prompt-sheet section {
+  margin-top: var(--space-6);
+}
+.prompt-sheet pre {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.prompt-sheet .reference-toggles img {
+  width: 100px;
+  height: 100px;
+}
+.reuse-chip {
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+}
+.filmstrip {
+  margin: var(--space-4) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.filmstrip .frame-strip {
+  flex: 1;
+}
+.filmstrip .frame-card {
+  flex-basis: 170px;
+}
+.filmstrip .frame-card .actions {
+  opacity: 0;
+}
+.filmstrip .frame-card:hover .actions,
+.filmstrip .frame-card:focus-within .actions {
+  opacity: 1;
+}
+.filmstrip .thumbnail-empty {
+  width: 100%;
+  height: 100px;
+}
+.composition-workspace {
+  padding-bottom: calc(var(--generate-bar-height, 160px) + var(--space-6));
+}
+.filmstrip .frame-card {
+  position: relative;
+}
+.filmstrip .frame-card .actions {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  margin: 0;
+  padding: var(--space-1);
+  background: var(--panel);
+  border-radius: var(--radius-sm);
+}
+.inspector .autosave-field {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.autosave-field > input,
+.autosave-field > textarea {
+  grid-column: 1 / -1;
+}
+summary.pack-heading::before {
+  content: "▸";
+}
+details[open] > summary.pack-heading::before {
+  transform: rotate(90deg);
+}
+.prompt-sheet {
+  bottom: var(--generate-bar-height, 100px);
+}

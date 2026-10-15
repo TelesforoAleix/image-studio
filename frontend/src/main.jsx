@@ -1,7 +1,8 @@
 import { performAction } from "./Actions";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { flushNavigation } from "./navigation";
 import { api } from "./api";
 import { OutputPage } from "./Feedback";
 import { Storage } from "./Storage";
@@ -37,10 +38,22 @@ function App() {
     setMessage(text);
     setRevision((n) => n + 1);
   };
+  const displayedRoute = useRef(route);
+  displayedRoute.current = route;
   useEffect(() => {
-    const navigate = () => {
-      setRoute(window.location.hash.slice(1) || "assets");
-      setError("");
+    let navigation = 0;
+    const navigate = async () => {
+      const next = window.location.hash.slice(1) || "assets";
+      const request = ++navigation;
+      try {
+        await flushNavigation();
+        if (request !== navigation) return;
+        setRoute(next);
+        setError("");
+      } catch {
+        if (request === navigation)
+          window.history.replaceState(null, "", `#${displayedRoute.current}`);
+      }
     };
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
@@ -50,18 +63,22 @@ function App() {
   }, [revision]);
   const projectMatch = /^project\/(\d+)$/.exec(route);
   const compositionMatch =
-    /^composition\/(\d+)(?:\/frame\/(\d+)\/(setup|generate|history))?$/.exec(
+    /^composition\/(\d+)(?:\/frame\/(\d+)(?:\/(setup|generate|history))?)?$/.exec(
       route,
     );
   const frameMatch = /^frame\/(\d+)$/.exec(route);
   useEffect(() => {
+    if (compositionMatch?.[3])
+      window.location.replace(
+        `#composition/${compositionMatch[1]}/frame/${compositionMatch[2]}`,
+      );
     if (route === "library") window.location.replace("#assets");
     if (frameMatch)
       act(async () => {
         const frame = await api(`/variants/${frameMatch[1]}`);
         if (frame.deleted_at) throw new Error("This frame has been deleted.");
         window.location.replace(
-          `#composition/${frame.composition_id}/frame/${frame.id}/setup`,
+          `#composition/${frame.composition_id}/frame/${frame.id}`,
         );
       }, false);
   }, [route]);
@@ -70,7 +87,7 @@ function App() {
   const outputMatch = /^output\/(\d+)\/(\d+)$/.exec(route);
   const assetMatch = /^asset\/(\d+)$/.exec(route);
   return (
-    <main>
+    <main className={compositionMatch ? "workspace-main" : undefined}>
       <header className="studio-header">
         <h1>
           image studio

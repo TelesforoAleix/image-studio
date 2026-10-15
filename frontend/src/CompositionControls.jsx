@@ -1,12 +1,18 @@
 import { ActionGroup, ActionButton, ActionInput } from "./Actions";
 import React, { useState } from "react";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 import { api } from "./api";
 
 export function Selection({ selection, save, remove }) {
   const [role, setRole] = useState(selection.role);
   return (
-    <ActionGroup className="panel">
-      <h3>{selection.asset.name}</h3>
+    <ActionGroup className="pack-row">
+      <div className="pack-heading">
+        {selection.asset.images[0] && (
+          <img src={`/api/files/${selection.asset.images[0].hash}`} alt="" />
+        )}
+        <strong>{selection.asset.name}</strong>
+      </div>
       <label>
         Role
         <ActionInput
@@ -20,70 +26,129 @@ export function Selection({ selection, save, remove }) {
       {selection.asset.deleted_at && (
         <p>This asset was deleted. Remove it to generate.</p>
       )}
-      <div className="reference-toggles">
-        {selection.asset.images
-          .filter((i) => !i.rejected && (i.approved || i.source === "uploaded"))
-          .map((i) => (
-            <label key={i.id}>
-              <img src={`/api/files/${i.hash}`} alt={selection.asset.name} />
-              <span>
-                <ActionInput
-                  type="checkbox"
-                  checked={
-                    i.approved
-                      ? !selection.deselected_images.includes(i.id)
-                      : selection.selected_originals.includes(i.id)
-                  }
-                  onChange={(e) =>
-                    save({
-                      ...selection,
-                      ...(i.approved
-                        ? {
-                            deselected_images: e.target.checked
-                              ? selection.deselected_images.filter(
-                                  (x) => x !== i.id,
-                                )
-                              : [...selection.deselected_images, i.id],
-                          }
-                        : {
-                            selected_originals: e.target.checked
-                              ? [...selection.selected_originals, i.id]
-                              : selection.selected_originals.filter(
-                                  (x) => x !== i.id,
-                                ),
-                          }),
-                    })
-                  }
-                />
-                Use {i.approved ? "reference" : "original"} {i.id}
-              </span>
-            </label>
-          ))}
-      </div>
-      <ActionButton className="plain" type="button" onClick={remove}>
-        Remove asset
-      </ActionButton>
+      <details>
+        <summary>Images</summary>
+        <div className="reference-toggles">
+          {selection.asset.images
+            .filter(
+              (i) => !i.rejected && (i.approved || i.source === "uploaded"),
+            )
+            .map((i, index, images) => (
+              <label key={i.id}>
+                <img src={`/api/files/${i.hash}`} alt={selection.asset.name} />
+                <span>
+                  <ActionInput
+                    type="checkbox"
+                    checked={
+                      i.approved
+                        ? !selection.deselected_images.includes(i.id)
+                        : selection.selected_originals.includes(i.id)
+                    }
+                    onChange={(e) =>
+                      save({
+                        ...selection,
+                        ...(i.approved
+                          ? {
+                              deselected_images: e.target.checked
+                                ? selection.deselected_images.filter(
+                                    (x) => x !== i.id,
+                                  )
+                                : [...selection.deselected_images, i.id],
+                            }
+                          : {
+                              selected_originals: e.target.checked
+                                ? [...selection.selected_originals, i.id]
+                                : selection.selected_originals.filter(
+                                    (x) => x !== i.id,
+                                  ),
+                            }),
+                      })
+                    }
+                  />
+                  {selection.asset.name},{" "}
+                  {i.approved ? "reference" : "original"}{" "}
+                  {images.filter((x) => x.approved === i.approved).indexOf(i) +
+                    1}{" "}
+                  of {images.filter((x) => x.approved === i.approved).length}
+                </span>
+              </label>
+            ))}
+        </div>
+        <ActionButton className="plain" type="button" onClick={remove}>
+          Remove asset
+        </ActionButton>
+      </details>
     </ActionGroup>
   );
 }
 
-export function Storyboard({ comp, setComp, act, selected, tab, navigate }) {
+export function Storyboard({ comp, setComp, act, selected, navigate, flush }) {
   const [confirming, setConfirming] = useState(null);
+  const [dragged, setDragged] = useState(null);
+  const [orderError, setOrderError] = useState("");
+  const reorder = (ids) =>
+    act(async () => {
+      await flush();
+      setOrderError("");
+      setComp(
+        await api(`/compositions/${comp.id}/frame-order`, "PUT", { ids }),
+      );
+    }).catch((e) => setOrderError(e.message));
   const move = (index, delta) =>
     act(async () => {
+      await flush();
+      setOrderError("");
       const ids = comp.variants.map((v) => v.id);
       [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]];
       setComp(
         await api(`/compositions/${comp.id}/frame-order`, "PUT", { ids }),
       );
-    });
+    }).catch((e) => setOrderError(e.message));
   return (
-    <ActionGroup className="panel">
+    <ActionGroup className="filmstrip">
+      {orderError && (
+        <p role="alert" className="error">
+          {orderError}
+        </p>
+      )}
       <div className="frame-strip">
         {comp.variants.map((v, index) => (
-          <article className="frame-card" key={v.id}>
+          <article
+            className="frame-card"
+            key={v.id}
+            draggable
+            onDragStart={(e) => {
+              setDragged(v.id);
+              e.dataTransfer.setData("text/plain", String(v.id));
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const source =
+                Number(e.dataTransfer.getData("text/plain")) || dragged;
+              const ids = comp.variants
+                .map((f) => f.id)
+                .filter((id) => id !== source);
+              if (
+                source === v.id ||
+                !comp.variants.some((f) => f.id === source)
+              )
+                return;
+              ids.splice(ids.indexOf(v.id), 0, source);
+              reorder(ids);
+              setDragged(null);
+            }}
+            onKeyDown={(e) => {
+              const delta =
+                e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+              if (e.altKey && delta && comp.variants[index + delta]) {
+                e.preventDefault();
+                move(index, delta);
+              }
+            }}
+          >
             <a
-              href={`#composition/${comp.id}/frame/${v.id}/${tab}`}
+              href={`#composition/${comp.id}/frame/${v.id}`}
               aria-current={v.id === selected ? "page" : undefined}
             >
               {v.final ? (
@@ -101,43 +166,50 @@ export function Storyboard({ comp, setComp, act, selected, tab, navigate }) {
             <div className="actions">
               <ActionButton
                 className="plain"
+                aria-label="Move up"
                 disabled={index === 0}
                 onClick={() => move(index, -1)}
               >
-                Move up
+                ←
               </ActionButton>
               <ActionButton
                 className="plain"
+                aria-label="Move down"
                 disabled={index === comp.variants.length - 1}
                 onClick={() => move(index, 1)}
               >
-                Move down
+                →
               </ActionButton>
-              <ActionButton
-                className="destructive"
-                disabled={comp.variants.length === 1}
-                onClick={() => setConfirming(v.id)}
-              >
-                Delete frame…
-              </ActionButton>
+              <WorkspaceMenu label={`Frame menu: ${v.name}`} icon="⋯">
+                <ActionButton
+                  role="menuitem"
+                  className="destructive"
+                  disabled={comp.variants.length === 1}
+                  onClick={() => setConfirming(v.id)}
+                >
+                  Delete frame…
+                </ActionButton>
+              </WorkspaceMenu>
             </div>
           </article>
         ))}
       </div>
       <ActionButton
+        aria-label="Add frame"
         onClick={() =>
           act(async () => {
+            await flush();
             const frame = await api(
               `/compositions/${comp.id}/variants`,
               "POST",
               {},
             );
             setComp(await api(`/compositions/${comp.id}`));
-            navigate("setup", frame.id);
+            await navigate(frame.id);
           })
         }
       >
-        Add frame
+        + Add frame
       </ActionButton>
       {confirming && (
         <div className="delete-confirm">
@@ -148,10 +220,12 @@ export function Storyboard({ comp, setComp, act, selected, tab, navigate }) {
             className="destructive"
             onClick={() =>
               act(async () => {
+                await flush();
                 await api(`/variants/${confirming}`, "DELETE");
                 const next = await api(`/compositions/${comp.id}`);
                 setComp(next);
-                if (confirming === selected) navigate(tab, next.variants[0].id);
+                if (confirming === selected)
+                  await navigate(next.variants[0].id);
                 setConfirming(null);
               })
             }
