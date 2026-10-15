@@ -1,4 +1,7 @@
-import React, { useEffect, useState } from "react";
+import { usePolling } from "./usePolling";
+import { hasActive, GenerationProgress } from "./Progress";
+import { ActionButton, ActionInput, ActionSelect } from "./Actions";
+import React, { useState } from "react";
 import { api } from "./api";
 import { Feedback } from "./Feedback";
 import { ModelCost } from "./ModelCost";
@@ -13,23 +16,24 @@ function Badges({ info }) {
   );
 }
 
-export function RunPicker({ models, choices, setChoices, references, busy }) {
+export function RunPicker({ models, choices, setChoices, references }) {
   return (
-    <fieldset disabled={busy}>
+    <fieldset>
       <legend>Compare one to three models</legend>
       {choices
         .filter((c) => !models.some((m) => m.model_name === c.model))
         .map((c) => (
           <p className="error" key={c.model}>
             {c.model} is no longer available.{" "}
-            <button
+            <ActionButton
+              className="plain"
               type="button"
               onClick={() =>
                 setChoices(choices.filter((x) => x.model !== c.model))
               }
             >
               Remove model
-            </button>
+            </ActionButton>
           </p>
         ))}
       {models.map((m) => {
@@ -39,7 +43,7 @@ export function RunPicker({ models, choices, setChoices, references, busy }) {
           <div className="model-option" key={m.model_name}>
             <label>
               <span>
-                <input
+                <ActionInput
                   type="checkbox"
                   checked={!!choice}
                   disabled={!choice && choices.length >= 3}
@@ -70,7 +74,7 @@ export function RunPicker({ models, choices, setChoices, references, busy }) {
             {choice && (
               <label>
                 Outputs for {info.display_name}
-                <select
+                <ActionSelect
                   value={choice.count}
                   onChange={(e) =>
                     setChoices(
@@ -87,7 +91,7 @@ export function RunPicker({ models, choices, setChoices, references, busy }) {
                       {n}
                     </option>
                   ))}
-                </select>
+                </ActionSelect>
               </label>
             )}
           </div>
@@ -140,12 +144,12 @@ export function PinnedReferences({ draft, setDraft, current }) {
             {!contains(r) && (
               <span className="badge">No longer in current pack</span>
             )}
-            <button
+            <ActionButton
               type="button"
               onClick={() => setDraft(draft.filter((_, j) => i !== j))}
             >
               Remove reference {i + 1}
-            </button>
+            </ActionButton>
           </figure>
         ))}
       </div>
@@ -164,9 +168,12 @@ export function PinnedReferences({ draft, setDraft, current }) {
               <figcaption>
                 {r.asset_name} · {r.role}
               </figcaption>
-              <button type="button" onClick={() => setDraft([...draft, r])}>
+              <ActionButton
+                type="button"
+                onClick={() => setDraft([...draft, r])}
+              >
                 Add reference
-              </button>
+              </ActionButton>
             </figure>
           ))}
       </div>
@@ -174,39 +181,24 @@ export function PinnedReferences({ draft, setDraft, current }) {
   );
 }
 
-export function Runs({
-  variantId,
-  act,
-  busy,
-  revision,
-  reuse,
-  runId,
-  refresh,
-}) {
+export function Runs({ variantId, act, revision, reuse, runId, refresh }) {
   const [runs, setRuns] = useState([]);
   const [final, setFinal] = useState(null);
-  useEffect(() => {
-    let active = true;
-    let timer;
-    async function load() {
-      await act(async () => {
-        const [next, picked] = await Promise.all([
-          api(`/variants/${variantId}/runs`),
-          api(`/variants/${variantId}/final`),
-        ]);
-        if (active) {
-          setRuns(next);
-          setFinal(picked);
-        }
-      }, false);
-      if (active) timer = setTimeout(load, 3000);
-    }
-    load();
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [variantId, revision]);
+  const pollError = usePolling(
+    async (active) => {
+      const [next, picked] = await Promise.all([
+        api(`/variants/${variantId}/runs`),
+        api(`/variants/${variantId}/final`),
+      ]);
+      if (active()) {
+        setRuns(next);
+        setFinal(picked);
+      }
+    },
+    hasActive(runs.flatMap((r) => r.generations)),
+    variantId,
+    revision,
+  );
   const choose = (g, output) =>
     act(async () => {
       setFinal(
@@ -252,6 +244,11 @@ export function Runs({
     .find((g) => g.id === final?.generation_id);
   return (
     <>
+      {pollError && (
+        <p className="error" role="alert">
+          {pollError}
+        </p>
+      )}
       {!runId && (
         <div className="actions feedback-tally" aria-label="Feedback per model">
           {Object.entries(tallies).map(([model, tally]) => (
@@ -271,12 +268,12 @@ export function Runs({
             <Feedback
               generation={finalGeneration}
               output={final.output}
-              {...{ act, busy }}
+              {...{ act }}
               saved={(f) => saveFeedback(finalGeneration.id, final.output, f)}
             />
           )}
-          <button
-            disabled={busy}
+          <ActionButton
+            className="plain"
             onClick={() =>
               act(async () => {
                 setFinal(await api(`/variants/${variantId}/final`, "DELETE"));
@@ -285,7 +282,7 @@ export function Runs({
             }
           >
             Clear final
-          </button>
+          </ActionButton>
         </div>
       )}
       {runs
@@ -297,9 +294,9 @@ export function Runs({
               <div className="actions">
                 <h3>Run · {new Date(run.created_at).toLocaleString()}</h3>
                 {!runId && (
-                  <button disabled={busy} onClick={() => reuse(run)}>
+                  <ActionButton onClick={() => reuse(run)}>
                     Reuse settings
-                  </button>
+                  </ActionButton>
                 )}
               </div>
               <details>
@@ -355,12 +352,11 @@ export function Runs({
                             {g.retry_of
                               ? `Retry of generation ${g.retry_of} · `
                               : ""}
-                            {g.state} · {g.outputs.length}/{g.count}
+                            <GenerationProgress generation={g} />
                           </p>
                           {g.error && <p className="error">{g.error}</p>}
                           {g.state === "failed" && (
-                            <button
-                              disabled={busy}
+                            <ActionButton
                               onClick={() =>
                                 act(async () => {
                                   const retry = await api(
@@ -384,7 +380,7 @@ export function Runs({
                               }
                             >
                               Retry
-                            </button>
+                            </ActionButton>
                           )}
                           {g.outputs.map((hash, output) => (
                             <figure key={`${g.id}-${output}`}>
@@ -396,19 +392,16 @@ export function Runs({
                               </a>
                               <Feedback
                                 generation={g}
-                                {...{ output, act, busy }}
+                                {...{ output, act }}
                                 saved={(f) => saveFeedback(g.id, output, f)}
                               />
                               {g.state === "done" && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() => choose(g, output)}
-                                >
+                                <ActionButton onClick={() => choose(g, output)}>
                                   {final?.generation_id === g.id &&
                                   final.output === output
                                     ? "Final"
                                     : "Mark final"}
-                                </button>
+                                </ActionButton>
                               )}
                             </figure>
                           ))}

@@ -1,3 +1,4 @@
+import { ActionButton } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 
@@ -12,7 +13,7 @@ function size(bytes) {
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${units[unit]}`;
 }
 
-export function Storage({ act, busy }) {
+export function Storage({ act }) {
   const [usage, setUsage] = useState(null);
   const load = () => act(async () => setUsage(await api("/storage")), false);
   useEffect(() => {
@@ -22,14 +23,17 @@ export function Storage({ act, busy }) {
     <section>
       <div className="library-header">
         <h2>Storage used</h2>
-        <button disabled={busy} onClick={load}>
+        <ActionButton
+          className="primary"
+          onClick={() => act(async () => setUsage(await api("/storage")))}
+        >
           Refresh
-        </button>
+        </ActionButton>
       </div>
       <p className="intro">
         All stored images are retained, including earlier references, rejected
-        candidates and outputs from hidden assets and frames. Shared files
-        count once.
+        candidates and outputs from hidden assets and frames. Shared files count
+        once.
       </p>
       {usage ? (
         <div className="asset-list">

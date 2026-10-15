@@ -1,13 +1,24 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  ActionTextarea,
+} from "./Actions";
 import React, { useState, useEffect } from "react";
 import { api } from "./api";
 
 const empty = { verdict: null, asset_ratings: [], note: "", updated_at: null };
 
-export function Feedback({ generation, output, act, busy, saved }) {
+export function Feedback({ generation, output, act, saved, primary = false }) {
   const feedback = generation.feedback?.[output] || empty;
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const references = [
     ...new Map(generation.references.map((r) => [r.asset_id, r])).values(),
   ];
@@ -21,9 +32,11 @@ export function Feedback({ generation, output, act, busy, saved }) {
           value,
         );
         saved(next);
-        if (detail) setDraft(null);
-        else if (draft) setDraft((old) => ({ ...old, verdict: next.verdict }));
-        setNotice("Feedback saved.");
+        if (detail) {
+          setDraft(null);
+          setNotice("Feedback saved.");
+        } else if (draft)
+          setDraft((old) => ({ ...old, verdict: next.verdict }));
       } finally {
         setSaving(false);
       }
@@ -38,32 +51,34 @@ export function Feedback({ generation, output, act, busy, saved }) {
           ["good", "Good"],
           ["not_good", "Not good"],
         ].map(([value, label]) => (
-          <button
+          <ActionButton
+            success="Feedback saved."
             type="button"
             key={value}
-            disabled={busy || saving}
+            disabled={saving}
             aria-pressed={feedback.verdict === value}
             onClick={() =>
               save({ verdict: feedback.verdict === value ? null : value })
             }
           >
             {label}
-          </button>
+          </ActionButton>
         ))}
       </div>
-      <button
+      <ActionButton
         type="button"
+        className={primary && !draft ? "primary" : "plain"}
         aria-expanded={!!draft}
         disabled={saving}
         onClick={() => {
           setDraft(draft ? null : { ...feedback });
-          setNotice("");
         }}
       >
         {draft ? "Cancel feedback" : "Provide feedback"}
-      </button>
+      </ActionButton>
       {draft && (
-        <form
+        <ActionForm
+          success="Feedback saved."
           onSubmit={(e) => {
             e.preventDefault();
             save(
@@ -76,11 +91,11 @@ export function Feedback({ generation, output, act, busy, saved }) {
             );
           }}
         >
-          <fieldset disabled={busy || saving}>
+          <fieldset disabled={saving}>
             <legend>Output {output + 1} feedback</legend>
             <label>
               Verdict
-              <select
+              <ActionSelect
                 value={draft.verdict || ""}
                 onChange={(e) =>
                   setDraft({ ...draft, verdict: e.target.value || null })
@@ -89,12 +104,12 @@ export function Feedback({ generation, output, act, busy, saved }) {
                 <option value="">Unrated</option>
                 <option value="good">Good</option>
                 <option value="not_good">Not good</option>
-              </select>
+              </ActionSelect>
             </label>
             {references.map((ref) => (
               <label key={ref.asset_id}>
                 {ref.asset_name} · {ref.role}
-                <select
+                <ActionSelect
                   value={
                     draft.asset_ratings.find((r) => r.asset_id === ref.asset_id)
                       ?.rating || ""
@@ -117,30 +132,35 @@ export function Feedback({ generation, output, act, busy, saved }) {
                   <option value="kept">Kept</option>
                   <option value="partly">Partly</option>
                   <option value="lost">Lost</option>
-                </select>
+                </ActionSelect>
               </label>
             ))}
             <label>
               Note (optional)
-              <textarea
+              <ActionTextarea
                 rows={3}
                 value={draft.note}
                 onChange={(e) => setDraft({ ...draft, note: e.target.value })}
               />
             </label>
-            <button type="submit">Save feedback</button>
+            <ActionButton
+              className={primary ? "primary" : "secondary"}
+              type="submit"
+            >
+              Save feedback
+            </ActionButton>
           </fieldset>
-        </form>
+        </ActionForm>
       )}
+      {notice && <span role="status">{notice}</span>}
       {feedback.updated_at && (
         <small>Changed {new Date(feedback.updated_at).toLocaleString()}</small>
       )}
-      <span role="status">{notice}</span>
     </div>
   );
 }
 
-export function OutputPage({ id, output, act, busy }) {
+export function OutputPage({ id, output, act }) {
   const [generation, setGeneration] = useState(null);
   const [final, setFinal] = useState(null);
   useEffect(() => {
@@ -172,7 +192,8 @@ export function OutputPage({ id, output, act, busy }) {
         alt={`Output ${output + 1}`}
       />
       <Feedback
-        {...{ generation, output, act, busy }}
+        primary
+        {...{ generation, output, act }}
         saved={(feedback) =>
           setGeneration({
             ...generation,
@@ -183,8 +204,7 @@ export function OutputPage({ id, output, act, busy }) {
         }
       />
       {generation.variant_id && generation.state === "done" && (
-        <button
-          disabled={busy}
+        <ActionButton
           onClick={() =>
             act(async () =>
               setFinal(
@@ -199,7 +219,7 @@ export function OutputPage({ id, output, act, busy }) {
           {final?.generation_id === generation.id && final.output === output
             ? "Final"
             : "Mark final"}
-        </button>
+        </ActionButton>
       )}
     </section>
   );

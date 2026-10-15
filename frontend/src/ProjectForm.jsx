@@ -1,12 +1,18 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionInput,
+  ActionTextarea,
+} from "./Actions";
 import React, { useState } from "react";
 import { StylePicker } from "./StylePicker";
 import { api } from "./api";
-export function ProjectForm({ project, act, changed, busy }) {
+export function ProjectForm({ project, act, changed }) {
   const [name, setName] = useState(project?.name || "");
   const [instructions, setInstructions] = useState(project?.instructions || "");
   const [style, setStyle] = useState(project?.style_asset_id ?? null);
   return (
-    <form
+    <ActionForm
       className="panel"
       onSubmit={(e) => {
         e.preventDefault();
@@ -27,7 +33,7 @@ export function ProjectForm({ project, act, changed, busy }) {
       <h3>{project ? project.name : "New project"}</h3>
       <label>
         Name
-        <input
+        <ActionInput
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -35,17 +41,17 @@ export function ProjectForm({ project, act, changed, busy }) {
       </label>
       <label>
         Creative direction
-        <textarea
+        <ActionTextarea
           rows="5"
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
           placeholder="Shared creative instructions for this project"
         />
       </label>
-      <StylePicker value={style} onChange={setStyle} {...{ act, busy }} />
-      <button disabled={busy}>
+      <StylePicker value={style} onChange={setStyle} {...{ act }} />
+      <ActionButton className={project ? "secondary" : "primary"}>
         {project ? "Save project" : "Create project"}
-      </button>
-    </form>
+      </ActionButton>
+    </ActionForm>
   );
 }

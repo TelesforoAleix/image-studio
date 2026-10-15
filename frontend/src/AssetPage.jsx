@@ -1,8 +1,9 @@
+import { ActionGroup, ActionButton, ActionForm, ActionInput } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { AssetFields, assetValues } from "./AssetFields";
 import { ReferenceGeneration } from "./Generation";
-export function AssetPage({ id, projects, act, changed, busy }) {
+export function AssetPage({ id, projects, act, changed }) {
   const [asset, setAsset] = useState(null);
   const [draft, setDraft] = useState(null);
   const [showRejected, setShowRejected] = useState(false);
@@ -32,7 +33,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
         <h2>{asset.name}</h2>
         <a href="#assets">Back to Assets</a>
       </div>
-      <form
+      <ActionForm
         className="panel"
         onSubmit={(e) => {
           e.preventDefault();
@@ -43,23 +44,21 @@ export function AssetPage({ id, projects, act, changed, busy }) {
         }}
       >
         <AssetFields value={draft} onChange={setDraft} projects={projects} />
-        <button disabled={busy}>Save asset</button>
-      </form>
+        <ActionButton>Save asset</ActionButton>
+      </ActionForm>
       <div className="panel">
         <label>
-          <input
+          <ActionInput
             type="checkbox"
             checked={showRejected}
             onChange={(e) => {
               setShowRejected(e.target.checked);
-              act(
-                async () =>
-                  setAsset(
-                    await api(
-                      `/assets/${id}?include_rejected=${e.target.checked}`,
-                    ),
+              act(async () =>
+                setAsset(
+                  await api(
+                    `/assets/${id}?include_rejected=${e.target.checked}`,
                   ),
-                false,
+                ),
               );
             }}
           />
@@ -82,7 +81,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
               </p>
             )}
             {title === "Originals" && (
-              <form
+              <ActionForm
                 onSubmit={(e) => {
                   e.preventDefault();
                   const form = e.currentTarget;
@@ -96,7 +95,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
               >
                 <label>
                   Upload images
-                  <input
+                  <ActionInput
                     type="file"
                     name="files"
                     multiple
@@ -107,8 +106,10 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                 <p>
                   JPEG, PNG or WebP. Up to 25 MB per file and 90 MB per request.
                 </p>
-                <button disabled={busy}>Upload selected images</button>
-              </form>
+                <ActionButton className="primary">
+                  Upload selected images
+                </ActionButton>
+              </ActionForm>
             )}
             {images.length ? (
               <div className="image-grid">
@@ -132,7 +133,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                         loading="lazy"
                       />
                     </a>
-                    <div className="image-info">
+                    <ActionGroup className="image-info">
                       <strong>
                         {image.rejected
                           ? "Rejected"
@@ -165,8 +166,7 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                           ))}
                         </div>
                       )}
-                      <button
-                        disabled={busy}
+                      <ActionButton
                         type="button"
                         onClick={() =>
                           act(async () => {
@@ -186,10 +186,9 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                         }
                       >
                         {image.approved ? "Unapprove" : "Approve"}
-                      </button>
+                      </ActionButton>
                       {image.source === "generated" && !image.rejected && (
-                        <button
-                          disabled={busy}
+                        <ActionButton
                           onClick={() =>
                             act(async () => {
                               setAsset(
@@ -204,9 +203,9 @@ export function AssetPage({ id, projects, act, changed, busy }) {
                           }
                         >
                           Reject
-                        </button>
+                        </ActionButton>
                       )}
-                    </div>
+                    </ActionGroup>
                   </article>
                 ))}
               </div>
@@ -230,15 +229,13 @@ export function AssetPage({ id, projects, act, changed, busy }) {
         ].join("|")}
         id={id}
         act={act}
-        busy={busy}
         refresh={async () =>
           setAsset(await api(`/assets/${id}?include_rejected=${showRejected}`))
         }
       />
       <div className="panel actions">
         <a href={`/api/assets/${id}/export.zip`}>Export asset</a>
-        <button
-          disabled={busy}
+        <ActionButton
           onClick={() =>
             act(async () => {
               const copy = await api(`/assets/${id}/duplicate`, "POST");
@@ -248,20 +245,22 @@ export function AssetPage({ id, projects, act, changed, busy }) {
           }
         >
           Duplicate asset
-        </button>
+        </ActionButton>
         {!confirming ? (
-          <button className="danger" onClick={() => setConfirming(true)}>
+          <ActionButton
+            className="destructive"
+            onClick={() => setConfirming(true)}
+          >
             Delete asset…
-          </button>
+          </ActionButton>
         ) : (
           <div className="delete-confirm">
             <p>
               Delete “{asset.name}” from Assets? Its record and images remain
               stored.
             </p>
-            <button
-              className="danger"
-              disabled={busy}
+            <ActionButton
+              className="destructive"
               onClick={() =>
                 act(async () => {
                   await api(`/assets/${id}`, "DELETE");
@@ -271,8 +270,13 @@ export function AssetPage({ id, projects, act, changed, busy }) {
               }
             >
               Yes, delete asset
-            </button>
-            <button onClick={() => setConfirming(false)}>Cancel</button>
+            </ActionButton>
+            <ActionButton
+              className="plain"
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </ActionButton>
           </div>
         )}
       </div>

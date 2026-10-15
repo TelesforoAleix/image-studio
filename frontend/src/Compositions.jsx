@@ -1,3 +1,4 @@
+import { ActionButton, ActionForm, ActionInput, ActionSelect } from "./Actions";
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { ProjectForm } from "./ProjectForm";
@@ -28,12 +29,12 @@ export function CompositionList({ items }) {
   );
 }
 
-export function NewComposition({ projects, projectId, act, busy }) {
+export function NewComposition({ projects, projectId, act }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState("single");
   const [project, setProject] = useState(projectId ?? "");
   return (
-    <form
+    <ActionForm
       className="panel"
       onSubmit={(e) => {
         e.preventDefault();
@@ -50,7 +51,7 @@ export function NewComposition({ projects, projectId, act, busy }) {
       <h3>New composition</h3>
       <label>
         Name
-        <input
+        <ActionInput
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -58,30 +59,33 @@ export function NewComposition({ projects, projectId, act, busy }) {
       </label>
       <label>
         Kind
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        <ActionSelect value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="single">Single image</option>
           <option value="storyboard">Storyboard</option>
-        </select>
+        </ActionSelect>
       </label>
       {projectId == null && (
         <label>
           Project
-          <select value={project} onChange={(e) => setProject(e.target.value)}>
+          <ActionSelect
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+          >
             <option value="">No project</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
       )}
-      <button disabled={busy}>Create composition</button>
-    </form>
+      <ActionButton className="primary">Create composition</ActionButton>
+    </ActionForm>
   );
 }
 
-export function Compositions({ projects, act, busy, projectFilter = "" }) {
+export function Compositions({ projects, act, projectFilter = "" }) {
   const [items, setItems] = useState([]);
   const [project, setProject] = useState(projectFilter);
   const [creating, setCreating] = useState(false);
@@ -98,13 +102,19 @@ export function Compositions({ projects, act, busy, projectFilter = "" }) {
     <section>
       <div className="library-header">
         <h2>Compositions</h2>
-        <button onClick={() => setCreating(!creating)}>
+        <ActionButton
+          className={creating ? "secondary" : "primary"}
+          onClick={() => setCreating(!creating)}
+        >
           {creating ? "Close form" : "New composition"}
-        </button>
+        </ActionButton>
       </div>
       <label>
         Project
-        <select value={project} onChange={(e) => setProject(e.target.value)}>
+        <ActionSelect
+          value={project}
+          onChange={(e) => setProject(e.target.value)}
+        >
           <option value="">All projects</option>
           <option value="none">No project</option>
           {projects.map((p) => (
@@ -112,15 +122,15 @@ export function Compositions({ projects, act, busy, projectFilter = "" }) {
               {p.name}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
-      {creating && <NewComposition {...{ projects, act, busy }} />}
+      {creating && <NewComposition {...{ projects, act }} />}
       <CompositionList items={items} />
     </section>
   );
 }
 
-export function ProjectPage({ id, projects, act, changed, busy }) {
+export function ProjectPage({ id, projects, act, changed }) {
   const [project, setProject] = useState(null);
   const [items, setItems] = useState([]);
   useEffect(() => {
@@ -136,13 +146,13 @@ export function ProjectPage({ id, projects, act, changed, busy }) {
         <h2>{project.name}</h2>
         <a href="#projects">Projects</a>
       </div>
-      <ProjectForm {...{ project, act, changed, busy }} />
+      <ProjectForm {...{ project, act, changed }} />
       <a href={`#assets?used_by_project=${id}`}>
         Assets used by this project's compositions
       </a>
       <h3>Compositions</h3>
       <CompositionList items={items} />
-      <NewComposition {...{ projects, act, busy }} projectId={Number(id)} />
+      <NewComposition {...{ projects, act }} projectId={Number(id)} />
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import { ActionInput, ActionSelect, ActionTextarea } from "./Actions";
 import React from "react";
 export const assetTypes = {
   person: "Person",
@@ -13,7 +14,7 @@ export function AssetFields({ value, onChange }) {
     <>
       <label>
         Name
-        <input
+        <ActionInput
           required
           value={value.name}
           onChange={(e) => field("name", e.target.value)}
@@ -21,7 +22,7 @@ export function AssetFields({ value, onChange }) {
       </label>
       <label>
         Type
-        <select
+        <ActionSelect
           required
           value={value.type}
           onChange={(e) => field("type", e.target.value)}
@@ -31,11 +32,11 @@ export function AssetFields({ value, onChange }) {
               {label}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
       <label>
         Label <span>(optional)</span>
-        <input
+        <ActionInput
           value={value.type_tag || ""}
           onChange={(e) => field("type_tag", e.target.value)}
           placeholder="For example, garment"
@@ -43,7 +44,7 @@ export function AssetFields({ value, onChange }) {
       </label>
       <label>
         Description
-        <textarea
+        <ActionTextarea
           rows="5"
           value={value.description}
           onChange={(e) => field("description", e.target.value)}
@@ -51,7 +52,7 @@ export function AssetFields({ value, onChange }) {
       </label>
       <label>
         What must stay the same
-        <textarea
+        <ActionTextarea
           rows="4"
           value={value.preserve}
           onChange={(e) => field("preserve", e.target.value)}
