@@ -12,8 +12,12 @@ depends_on = None
 def upgrade():
     op.create_table(
         "project_assets",
-        sa.Column("project_id", sa.ForeignKey("projects.id"), primary_key=True),
-        sa.Column("asset_id", sa.ForeignKey("assets.id"), primary_key=True),
+        sa.Column(
+            "project_id", sa.Integer(), sa.ForeignKey("projects.id"), primary_key=True
+        ),
+        sa.Column(
+            "asset_id", sa.Integer(), sa.ForeignKey("assets.id"), primary_key=True
+        ),
         sa.Column(
             "added_at",
             sa.DateTime(timezone=True),
