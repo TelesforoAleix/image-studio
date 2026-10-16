@@ -6,10 +6,12 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   test:
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     container: python:3.13-bookworm
     services:
@@ -25,16 +27,16 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://studio:synthetic-test-only@postgres:5432/studio
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       # Trust only this disposable container's checkout, across action HOME changes.
       - run: git config --system --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           python-version: '3.13'
       - run: uv sync --locked
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -68,7 +70,7 @@ jobs:
           fi
           SYSTEMD_UNIT_PATH="$PWD/deploy:/tmp/studio-unit-check:" systemd-analyze verify --man=no deploy/image-studio.service deploy/image-studio-dump.service deploy/image-studio-dump.timer
       - run: uv run python scripts/check_no_data.py
-      - uses: gitleaks/gitleaks-action@v3
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: 'false'
@@ -81,8 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           python-version: '3.13'
       - run: uv sync --locked
