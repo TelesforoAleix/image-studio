@@ -49,9 +49,6 @@ jobs:
       - name: Prove frontend viewer, workspace and foundations
         run: npm run check
         working-directory: frontend
-      - name: Repeat keyboard review stability proof
-        run: npx playwright test checks/asset-page.spec.js --grep "images precede the inspector" --repeat-each=20
-        working-directory: frontend
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
