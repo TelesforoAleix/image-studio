@@ -23,3 +23,50 @@ Connection refusal and DNS failures retry with delays of 10, 20, 40, 80, 160, th
 The prompt renderer creates shared content from project instructions, brief, selected style, asset roles and descriptions, preservation rules, and frame text. It then renders this content with ordered reference legends according to the model's prompt family and endpoint shape. Per-model edits replace that model's rendered prompt only. Run settings and prompt edits are snapshotted, so later changes to assets or approvals do not rewrite history.
 
 The cached model profile is retained with generations, including extra profile fields. The interface uses profile data for model names, paid/placeholder labels, capabilities, reference limits, price estimates and timing estimates. Pricing is displayed as an estimate when the endpoint marks it so.
+
+### Capability profile fields
+
+The endpoint must provide a model name and `model_info` for image generation
+models. Required profile values are `mode: image_generation`, `display_name`,
+boolean `paid` and `placeholder`, nonnegative integer `max_references`,
+`licence`, `endpoint` (`images/edits` or `chat/completions`), `response`
+(`b64_json`, `message_images`, or `url`), and pricing (`price_per_image`, or
+`sizes`). Optional `seconds_per_image` is a nonnegative number.
+
+| Field | Use and default |
+| --- | --- |
+| `reference_max_side` | Maximum sent reference dimension; defaults to 2048, must be positive |
+| `prompt_family` | Prompt rendering family; unknown or absent preserves shared order/text |
+| `reference_slots` | Per-type slot limits (`character` for Person; `object` for other types) |
+| `aspect_ratios` | Supported ratios and endpoint field/value mapping |
+| `qualities`, `resolutions` | Priced setting choices and request field mappings |
+| `sizes` | Alternative priced `{value, aspect_ratio, resolution, price}` choices |
+| `advanced` | Named request controls with type, default, and values or integer range |
+| `max_prompt_chars` | Maximum rendered prompt size |
+| `price_per_image` | Prices by setting; used for estimates |
+| `price_per_reference` | Per-reference estimate addition; absent means zero |
+| `price_estimated` | Marks displayed pricing as estimated |
+| `price_checked` | Retained endpoint metadata |
+| `display_name`, `paid`, `placeholder`, `licence`, `seconds_per_image` | UI labels, badges, licence and timing metadata |
+| `endpoint`, `response`, `max_references` | Request shape, decoder, and total reference limit |
+
+Unknown profile fields are retained in cached model metadata and generation
+snapshots. `url` responses are refused; the application does not fetch arbitrary
+image URLs. If `response` or `endpoint` is absent in an older saved snapshot,
+the client defaults to `b64_json` and `images/edits`, respectively.
+
+## Generation failures
+
+Connection refusal and DNS failures retry with delays of 10, 20, 40, 80, 160,
+then 300 seconds, without a fixed attempt limit. Timeouts and endpoint 5xx or
+uncertain transport failures retry to a maximum of three attempts. Other 4xx
+responses fail immediately. HTTP 402 is terminal and shown as “Monthly image
+budget reached — resets on the 1st (UTC)”; other HTTP errors use “Image request
+failed (HTTP <status>)”. Malformed image responses and unsupported endpoint or
+response profiles fail terminally. Model-list connectivity or invalid metadata
+returns “Image model list temporarily unavailable”.
+
+Completed outputs remain retained if a later sequential output fails. A lost
+response can cause an unfinished output to be requested again because the
+endpoint contract has no idempotency key. Retrying a failed generation uses its
+original prompt, model profile, and ordered reference snapshot.
