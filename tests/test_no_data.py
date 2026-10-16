@@ -68,3 +68,39 @@ def test_symlink_and_missing_file(tmp_path):
     (tmp_path / "link.txt").symlink_to(tmp_path / "missing.txt")
     violations = check_paths(tmp_path, ["link.txt", "missing.txt"])
     assert len(violations) == 2
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        ".env",
+        ".env.production",
+        "nested/.env.example",
+        "nested/.ENV",
+        "frontend/dist/bundle.js",
+        "node_modules/package/index.js",
+        ".venv/pyvenv.cfg",
+        "data/prompt.txt",
+        "exports/manifest.txt",
+        ".aws/credentials",
+        ".ssh/config",
+        "id_ed25519",
+        "playwright-report/index.html",
+        "test-results/result.txt",
+    ],
+)
+def test_forbidden_paths_even_when_force_added(tmp_path, name):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic")
+    assert check_paths(tmp_path, [name])
+
+
+def test_root_environment_example_is_allowed(tmp_path):
+    (tmp_path / ".env.example").write_text("SYNTHETIC_SETTING=\n")
+    assert check_paths(tmp_path, [".env.example"]) == []
+
+
+def test_renamed_binary(tmp_path):
+    (tmp_path / "synthetic.txt").write_bytes(b"synthetic\x00binary")
+    assert "binary file signature" in check_paths(tmp_path, ["synthetic.txt"])[0]

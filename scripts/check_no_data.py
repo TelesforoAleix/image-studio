@@ -8,7 +8,27 @@ DATA_EXTENSIONS = frozenset(
     """.png .jpg .jpeg .gif .webp .tif .tiff .bmp .svg .ico .heic .heif .avif
     .pdf .csv .tsv .jsonl .ndjson .parquet .xlsx .xls .pkl .pickle .npy .npz
     .h5 .db .sqlite .sqlite3 .dump .sql.gz .zip .tar .tgz .gz
-    .bin .pt .safetensors .onnx .gguf""".split()
+    .bin .pt .safetensors .onnx .gguf .ckpt .pth .hdf5 .arrow .feather
+    .apng .jpe .jfif .jxl .psd .raw .dng .sql .bak .backup .7z .rar .bz2 .xz .zst
+    .pem .key .p12 .pfx""".split()
+)
+FORBIDDEN_DIRECTORIES = frozenset(
+    {
+        "node_modules",
+        "dist",
+        "build",
+        ".venv",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        "htmlcov",
+        "data",
+        "exports",
+        ".aws",
+        ".ssh",
+        "playwright-report",
+        "test-results",
+    }
 )
 # Exact configuration paths; no directory exemptions or wildcard matches.
 JSON_CONFIG_PATHS = frozenset(
@@ -28,6 +48,14 @@ def check_paths(root: Path, paths: list[str]) -> list[str]:
     for name in paths:
         path = root / name
         reasons = []
+        lower_parts = tuple(part.lower() for part in path.relative_to(root).parts)
+        if any(part in FORBIDDEN_DIRECTORIES for part in lower_parts[:-1]):
+            reasons.append("data, build output or local state directory")
+        if lower_parts[-1] == ".env" or lower_parts[-1].startswith(".env."):
+            if name != ".env.example":
+                reasons.append("environment file is not the root example")
+        if lower_parts[-1] in {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}:
+            reasons.append("private key filename")
         if any(name.lower().endswith(ext) for ext in DATA_EXTENSIONS):
             reasons.append("data extension")
         if path.suffix.lower() == ".json" and name not in JSON_CONFIG_PATHS:
@@ -47,6 +75,8 @@ def check_paths(root: Path, paths: list[str]) -> list[str]:
                 or header[4:8] == b"ftyp"
             ):
                 reasons.append("PDF or image signature")
+            if b"\0" in header:
+                reasons.append("binary file signature")
         if reasons:
             violations.append(f"{name}: {', '.join(reasons)}")
     return violations
