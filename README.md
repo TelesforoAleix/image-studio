@@ -49,7 +49,8 @@ Unknown API routes return JSON 404 responses. See the topic guides for the full 
 and package details.
 
 See [workflows](docs/workflows.md), [architecture](docs/architecture.md), [data and
-formats](docs/data-and-formats.md), and [operations](docs/operations.md) for details.
+formats](docs/data-and-formats.md), [API reference](docs/api.md), and
+[operations](docs/operations.md) for details.
 
 ## Run locally
 
