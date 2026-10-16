@@ -172,6 +172,12 @@ test("images precede the inspector; focused candidates support A/R and confirmed
   await expect
     .poll(() => state.patches)
     .toEqual([{ id: 2, body: { approved: true } }]);
+  await expect(
+    region(page, "To review").getByRole("article", {
+      name: "Candidate 2",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await page.getByRole("article", { name: "Candidate 3", exact: true }).focus();
   await page.keyboard.press("r");
   await expect.poll(() => state.patches.length).toBe(2);
